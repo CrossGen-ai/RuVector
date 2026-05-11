@@ -10157,6 +10157,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-soar"
+version = "2.2.2"
+dependencies = [
+ "rand 0.8.5",
+ "rand_distr 0.4.3",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-solver"
 version = "2.2.2"
 dependencies = [
@@ -10731,6 +10740,13 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "ruvllm_retrieval_diffusion"
+version = "0.1.0"
+dependencies = [
+ "ruvllm_sparse_attention",
 ]
 
 [[package]]
