@@ -1,0 +1,17 @@
+[package]
+name        = "ruvector-leanvec"
+version     = "0.1.0"
+edition     = "2021"
+description = "LeanVec-LVQ: learned linear projection + locally-adaptive vector quantization with exact rerank, for fast in-memory ANN search"
+authors     = ["ruvnet", "claude-flow"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/ruvnet/ruvector"
+keywords    = ["ann", "quantization", "leanvec", "lvq", "ruvector"]
+categories  = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "leanvec-demo"
+path = "src/main.rs"
+
+[dependencies]
+rand = "0.8"

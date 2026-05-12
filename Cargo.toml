@@ -233,6 +233,8 @@ members = [
     "crates/ruvllm_retrieval_diffusion",
     # RAIRS IVF: Redundant Assignment + Amplified Inverse Residual (ADR-193)
     "crates/ruvector-rairs",
+    # LeanVec-LVQ: PCA projection + locally-adaptive 8-bit quantisation (ADR-194)
+    "crates/ruvector-leanvec",
 ]
 resolver = "2"
 
