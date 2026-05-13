@@ -1,0 +1,27 @@
+[package]
+name = "ruvector-nsg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "NSG: Navigating Spreading-out Graph for approximate nearest-neighbor search (Fu, Xiang, Wang, Cai — VLDB 2019), with NN-Descent kNN-graph init and MRNG edge pruning."
+
+[[bin]]
+name = "nsg-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "nsg_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
