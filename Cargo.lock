@@ -8602,6 +8602,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-anisotropic-vq"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "ruvector-attention"
 version = "2.2.2"
 dependencies = [
