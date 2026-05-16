@@ -1,0 +1,31 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Anisotropic Vector Quantization (ScaNN-style score-aware PQ): a PQ family where the codebook update minimizes the parallel error component along the data direction, improving inner-product / cosine recall at the same compression ratio."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "apq-bench"
+path = "src/main.rs"
+
+[[bench]]
+name = "apq_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
