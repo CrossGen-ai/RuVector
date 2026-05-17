@@ -1,0 +1,28 @@
+[package]
+name = "ruvector-symphony-qg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "SymphonyQG-style fusion of quantization-aware graph search and product quantization; navigates the graph with quantized distances so reranking can be elided"
+
+[[bin]]
+name = "symphony-qg-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "symphony_qg_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
