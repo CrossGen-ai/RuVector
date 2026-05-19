@@ -1,0 +1,28 @@
+[package]
+name = "ruvector-lvq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "LVQ: Locally-Adaptive Vector Quantization for streaming ANN search (per-vector scale+bias + B-bit uniform quantization, optional 2-level residual)"
+
+[[bin]]
+name = "lvq-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "lvq_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
