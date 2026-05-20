@@ -233,6 +233,8 @@ members = [
     "crates/ruvllm_retrieval_diffusion",
     # RAIRS IVF: Redundant Assignment + Amplified Inverse Residual (ADR-193)
     "crates/ruvector-rairs",
+    # PQ FastScan: 4-bit PQ with SIMD shuffle ADC (ADR-196)
+    "crates/ruvector-pq-fastscan",
 ]
 resolver = "2"
 
