@@ -1,0 +1,28 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Anisotropic Product Quantization (ScaNN-style) — weighted PQ that prioritizes parallel residual error for higher MIPS/cosine recall vs plain PQ and OPQ"
+
+[[bin]]
+name = "anisotropic-pq-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "apq_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
