@@ -233,6 +233,7 @@ members = [
     "crates/ruvllm_retrieval_diffusion",
     # RAIRS IVF: Redundant Assignment + Amplified Inverse Residual (ADR-193)
     "crates/ruvector-rairs",
+    "crates/ruvector-symphonyqg",
 ]
 resolver = "2"
 
