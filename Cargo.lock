@@ -9954,6 +9954,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-roargraph"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+]
+
+[[package]]
 name = "ruvector-robotics"
 version = "0.1.0"
 dependencies = [
