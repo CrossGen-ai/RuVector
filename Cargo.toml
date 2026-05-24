@@ -233,6 +233,8 @@ members = [
     "crates/ruvllm_retrieval_diffusion",
     # RAIRS IVF: Redundant Assignment + Amplified Inverse Residual (ADR-193)
     "crates/ruvector-rairs",
+    # OPQ: Optimized Product Quantization (ADR-194, nightly 2026-05-24)
+    "crates/ruvector-opq",
 ]
 resolver = "2"
 

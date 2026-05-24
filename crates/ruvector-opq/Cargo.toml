@@ -1,0 +1,19 @@
+[package]
+name        = "ruvector-opq"
+version     = "0.1.0"
+edition     = "2021"
+description = "OPQ — Optimized Product Quantization (rotated PQ via eigenvalue allocation + parametric Procrustes) for ruvector"
+authors     = ["ruvnet", "claude-flow"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/ruvnet/ruvector"
+keywords    = ["ann", "pq", "opq", "vector-search", "quantization"]
+categories  = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "opq-demo"
+path = "src/main.rs"
+
+[dependencies]
+rand     = "0.8"
+nalgebra = { workspace = true }
+serde    = { version = "1", features = ["derive"] }

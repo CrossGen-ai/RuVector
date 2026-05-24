@@ -9871,6 +9871,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-opq"
+version = "0.1.0"
+dependencies = [
+ "nalgebra 0.33.3",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
 name = "ruvector-profiler"
 version = "2.2.3"
 dependencies = [
