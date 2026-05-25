@@ -1,0 +1,14 @@
+[package]
+name = "ruvector-serf"
+version = "0.1.0"
+edition = "2021"
+description = "SeRF: Segment-graph range-filtered approximate nearest neighbor search"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "range_bench"
+path = "examples/range_bench.rs"
