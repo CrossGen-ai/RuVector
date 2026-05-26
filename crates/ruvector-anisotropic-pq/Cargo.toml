@@ -1,0 +1,27 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Anisotropic Product Quantization (score-aware loss, ScaNN-style) for high-recall maximum-inner-product search"
+
+[[bin]]
+name = "apq-bench"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "apq_recall"
+harness = false
