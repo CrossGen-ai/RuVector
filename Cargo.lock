@@ -10254,6 +10254,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-spann"
+version = "0.1.0"
+dependencies = [
+ "criterion 0.5.1",
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "ruvector-sparse-inference"
 version = "2.2.3"
 dependencies = [
