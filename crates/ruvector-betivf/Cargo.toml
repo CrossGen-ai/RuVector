@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-betivf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bounded Early-Termination IVF: triangle-inequality lower bounds give per-query adaptive nprobe for ANN search"
+
+[[bin]]
+name = "betivf-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "betivf_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
