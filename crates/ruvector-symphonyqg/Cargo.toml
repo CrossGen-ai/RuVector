@@ -1,0 +1,22 @@
+[package]
+name        = "ruvector-symphonyqg"
+version     = "0.1.0"
+edition     = "2021"
+description = "SymphonyQG: joint graph index + 1-bit RaBitQ-style quantization for ruvector (SIGMOD 2025 inspired)"
+authors     = ["ruvnet", "claude-flow"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/ruvnet/ruvector"
+keywords    = ["ann", "graph", "quantization", "vector-search", "ruvector"]
+categories  = ["algorithms", "data-structures"]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "symphonyqg-demo"
+path = "src/main.rs"
+
+[dependencies]
+rand        = "0.8"
+
+[dev-dependencies]
