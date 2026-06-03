@@ -233,6 +233,8 @@ members = [
     "crates/ruvllm_retrieval_diffusion",
     # RAIRS IVF: Redundant Assignment + Amplified Inverse Residual (ADR-193)
     "crates/ruvector-rairs",
+    # Adaptive ef_search predictor for graph ANN (ADR-196, nightly 2026-06-03)
+    "crates/ruvector-adaptive-ef",
 ]
 resolver = "2"
 
