@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Score-aware (anisotropic) product quantization for MIPS, ScaNN-style. Real benchmarks vs. L2 PQ."
+authors = ["ruvector nightly research"]
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[dev-dependencies]
+
+[[bin]]
+name = "anisotropic-pq-bench"
+path = "src/main.rs"
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[lints]
+workspace = true
