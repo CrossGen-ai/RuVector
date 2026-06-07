@@ -1,0 +1,24 @@
+[package]
+name        = "ruvector-dedrift"
+version     = "0.1.0"
+edition     = "2021"
+description = "DEDRIFT: incremental IVF rebalancing under content drift — split, lazy, hybrid policies on top of a plain IVF index"
+authors     = ["ruvnet", "claude-flow"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/ruvnet/ruvector"
+keywords    = ["ann", "ivf", "vector-search", "drift", "ruvector"]
+categories  = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "dedrift-demo"
+path = "src/main.rs"
+
+[dependencies]
+rand        = "0.8"
+
+[dev-dependencies]
+criterion   = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name    = "dedrift_bench"
+harness = false
