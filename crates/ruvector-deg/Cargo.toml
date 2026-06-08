@@ -1,0 +1,32 @@
+[package]
+name        = "ruvector-deg"
+version     = "0.1.0"
+edition     = "2021"
+description = "DEG: Dynamic Exploration Graph — graph ANN index with native dynamic insert/delete and edge-optimization"
+authors     = ["ruvnet", "crossgen-ai"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/ruvnet/ruvector"
+keywords    = ["ann", "graph", "vector-search", "nearest-neighbor", "dynamic"]
+categories  = ["algorithms", "data-structures"]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "deg-demo"
+path = "src/main.rs"
+
+[dependencies]
+rand     = "0.8"
+rayon    = { version = "1.10", optional = true }
+
+[features]
+default = []
+parallel = ["rayon"]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name    = "deg_bench"
+harness = false

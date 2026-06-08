@@ -233,6 +233,8 @@ members = [
     "crates/ruvllm_retrieval_diffusion",
     # RAIRS IVF: Redundant Assignment + Amplified Inverse Residual (ADR-193)
     "crates/ruvector-rairs",
+    # DEG: Dynamic Exploration Graph — native dynamic-update ANN (ADR-196)
+    "crates/ruvector-deg",
 ]
 resolver = "2"
 

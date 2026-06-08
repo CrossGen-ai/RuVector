@@ -9107,6 +9107,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-deg"
+version = "0.1.0"
+dependencies = [
+ "criterion 0.5.1",
+ "rand 0.8.5",
+ "rayon",
+]
+
+[[package]]
 name = "ruvector-delta-consensus"
 version = "0.1.0"
 dependencies = [
