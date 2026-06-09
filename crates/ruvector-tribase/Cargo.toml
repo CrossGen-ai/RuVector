@@ -1,0 +1,18 @@
+[package]
+name        = "ruvector-tribase"
+version     = "0.1.0"
+edition     = "2021"
+description = "Tribase: triangle-inequality pruning for IVF nearest-neighbor queries"
+authors     = ["ruvnet", "claude-flow"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/ruvnet/ruvector"
+keywords    = ["ann", "ivf", "vector-search", "tribase", "ruvector"]
+categories  = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "tribase-demo"
+path = "src/main.rs"
+
+[dependencies]
+rand        = "0.8"
+serde       = { version = "1", features = ["derive"] }

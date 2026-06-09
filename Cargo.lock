@@ -10411,6 +10411,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-tribase"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
 name = "ruvector-verified"
 version = "0.1.1"
 dependencies = [
