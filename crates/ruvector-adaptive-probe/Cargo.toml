@@ -1,0 +1,28 @@
+[package]
+name = "ruvector-adaptive-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Adaptive nprobe IVF: per-query probe budgeting via score-margin plateau detection for high-recall ANN at lower compute"
+
+[[bin]]
+name = "adaptive-probe-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "adaptive_probe_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[features]
+default = []
