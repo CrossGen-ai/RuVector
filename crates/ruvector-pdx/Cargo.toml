@@ -1,0 +1,19 @@
+[package]
+name = "ruvector-pdx"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "PDX (vertical/transposed block) data layout for SIMD-accelerated vector similarity scan with early termination pruning."
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "pdx_demo"
+path = "examples/pdx_demo.rs"
+
+[[bench]]
+name = "pdx_bench"
+path = "benches/pdx_bench.rs"
+harness = false

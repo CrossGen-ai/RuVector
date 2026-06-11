@@ -9896,6 +9896,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-pdx"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-perception"
 version = "2.2.3"
 dependencies = [
