@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-early-term"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Per-query early-termination HNSW search with online recall prediction"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rand = "0.8"
+rand_xoshiro = "0.6"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "et_bench"
+harness = false
+
+[[example]]
+name = "et_demo"
+path = "examples/et_demo.rs"
+
+[lib]
+path = "src/lib.rs"

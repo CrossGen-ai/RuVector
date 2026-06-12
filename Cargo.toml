@@ -238,6 +238,8 @@ members = [
     "crates/ruvector-graph-condense-wasm",
     # Perception substrate: delta -> boundary -> coherence -> proof -> action
     "crates/ruvector-perception",
+    # Early-termination HNSW (ADR-199): per-query adaptive stop with online recall predictor
+    "crates/ruvector-early-term",
 ]
 resolver = "2"
 

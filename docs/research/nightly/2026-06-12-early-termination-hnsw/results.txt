@@ -1,0 +1,26 @@
+== ruvector-early-term demo ==
+n=20000  dim=64  clusters=64  sigma=0.18  k=10  ef_max=96
+[step 1/4] synthesizing dataset + brute-force GT...
+[step 2/4] building HNSW...
+[step 3/4] training learned predictor on 200 held-out queries...
+[step 4/4] evaluating policies on 500 test queries...
+[       FixedEf] recall@10=0.7932  dist_calls/q=1122.8  expansions/q=106.0  early=   0/500  total=67.923917ms  per_query= 135.8us
+[Slope(w=8,ε=2e-4)] recall@10=0.5492  dist_calls/q= 474.4  expansions/q= 28.7  early= 500/500  total=27.507416ms  per_query=  55.0us
+[Learned(τ=0.04)] recall@10=0.7446  dist_calls/q= 956.3  expansions/q= 89.5  early= 379/500  total=61.452125ms  per_query= 122.9us
+== Pareto sweep: recall@10 vs distance-calls/q ==
+[label                ] recall    dist_calls/q   us/q     early%
+[             FixedEf] 0.6134       571.7       35.8      0%
+[             FixedEf] 0.6880       724.3       61.3      0%
+[             FixedEf] 0.7330       856.9       87.4      0%
+[             FixedEf] 0.7628       984.9      107.4      0%
+[             FixedEf] 0.7932      1122.8      134.5      0%
+[             FixedEf] 0.8374      1399.2      200.1      0%
+[       Slope(ε=5e-4)] 0.5436       465.7       55.6    100%
+[       Slope(ε=2e-4)] 0.5492       474.4       56.5    100%
+[       Slope(ε=1e-4)] 0.5524       478.3       54.1    100%
+[       Slope(ε=5e-5)] 0.5540       480.9       56.8    100%
+[     Learned(τ=0.08)] 0.7110       828.2      104.1     98%
+[     Learned(τ=0.06)] 0.7266       887.5      111.6     89%
+[     Learned(τ=0.04)] 0.7446       956.3      122.1     76%
+[     Learned(τ=0.02)] 0.7630      1021.2      125.9     57%
+[     Learned(τ=0.01)] 0.7730      1053.4      127.8     43%
