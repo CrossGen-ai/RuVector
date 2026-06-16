@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-segment-rangehnsw"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["CrossGen-AI Nightly Research"]
+repository = "https://github.com/CrossGen-ai/RuVector"
+readme = "README.md"
+description = "Segment-tree of small graph indexes for range-filtered approximate nearest neighbor search (iRangeGraph-style PoC)."
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[features]
+default = []
