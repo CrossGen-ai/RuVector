@@ -1,0 +1,23 @@
+[package]
+name = "ruvector-symphony-qg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "SymphonyQG-inspired co-designed graph + 1-bit quantization for ANN search: graph neighbours carry inline binary codes so candidate distance estimates are computed at popcount speed, with f32 reranking only for the top-K survivors."
+
+[[bin]]
+name = "symphony-qg-bench"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# none — keep PoC self-contained
