@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-adaptive-ef"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Per-query adaptive ef-search predictor for HNSW: hits a recall target at minimum latency (LAET/Auncel-style)"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rayon = { workspace = true }
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
