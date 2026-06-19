@@ -246,6 +246,8 @@ members = [
     "crates/photonlayer-ruvector",
     "crates/photonlayer-cli",
     "crates/photonlayer-wasm",
+    # Anytime HNSW: progressive top-k refinement with monotone guarantees
+    "crates/ruvector-anytime",
 ]
 resolver = "2"
 
