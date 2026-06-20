@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-laet"
+version = "0.1.0"
+edition = "2021"
+description = "Learned Adaptive Early Termination (LAET) for HNSW graph search — per-query ef prediction via tiny ridge regressor."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[dev-dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[lib]
+path = "src/lib.rs"

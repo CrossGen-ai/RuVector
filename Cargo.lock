@@ -9755,6 +9755,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-laet"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
 name = "ruvector-learning-wasm"
 version = "0.1.0"
 dependencies = [

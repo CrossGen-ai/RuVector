@@ -1,0 +1,22 @@
+Hardware: Apple M4 Max, macOS 24.6.0, release build, single-threaded
+Command: cargo run --release -p ruvector-laet --example bench
+
+[laet-hnsw] generating dataset n=50000 d=64 k=10 …
+[laet-hnsw] building HNSW M=16 efC=100 …
+[laet-hnsw] build done: 5.32s
+[laet-hnsw] computing ground truth (brute) …
+[laet-hnsw] calibrating LAET predictor on 500 queries …
+[laet-hnsw] calibrated targets: mean=45.0  std=35.1
+[laet-hnsw] ridge weights: [-19.93, 0.635, -0.0078, 0.0182, 13.08]  (rounded)
+
+=== Benchmark (1000 queries, k=10) ===
+strategy                 recall     dist/query       us/query   ef/query
+fixed-ef ef=16           0.8207          450.6          26.89       16.0
+fixed-ef ef=32           0.9363          660.2          47.75       32.0
+fixed-ef ef=64           0.9894          952.7          87.45       64.0
+fixed-ef ef=128          0.9983         1257.6         147.49      128.0
+fixed-ef ef=256          0.9998         1487.9         242.88      256.0
+gap-heuristic             0.9998           96.1         241.07       16.4
+laet                      0.9696          796.1          64.64       45.0
+
+Target recall for LAET calibration: 0.95
