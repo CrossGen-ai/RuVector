@@ -246,6 +246,7 @@ members = [
     "crates/photonlayer-ruvector",
     "crates/photonlayer-cli",
     "crates/photonlayer-wasm",
+    "crates/ruvector-adaptive-beam",
 ]
 resolver = "2"
 

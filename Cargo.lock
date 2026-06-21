@@ -8680,6 +8680,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-adaptive-beam"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
 name = "ruvector-attention"
 version = "2.2.3"
 dependencies = [
