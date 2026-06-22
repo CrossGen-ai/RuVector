@@ -10026,6 +10026,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-nndescent"
+version = "2.2.3"
+dependencies = [
+ "rand 0.8.6",
+]
+
+[[package]]
 name = "ruvector-node"
 version = "2.2.3"
 dependencies = [
