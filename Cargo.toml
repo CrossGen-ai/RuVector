@@ -23,6 +23,7 @@ exclude = ["external/ruqu", "external/rvdna", "examples/OSpipe", "examples/rvf",
     "crates/ruos-thermal"]
 members = [
     "crates/ruvector-temporal-coherence",
+    "crates/ruvector-symphony-qg",
     "crates/ruvector-acorn",
     "crates/ruvector-acorn-wasm",
     "crates/ruvector-coherence-hnsw",
