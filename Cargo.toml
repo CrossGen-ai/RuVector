@@ -194,6 +194,8 @@ members = [
     # DiskANN / Vamana (ADR-143)
     "crates/ruvector-diskann",
     "crates/ruvector-diskann-node",
+    # Dynamic Exploration Graph (ADR-269, nightly 2026-06-26)
+    "crates/ruvector-deg",
     # Boundary-first scientific discovery PoC
     "examples/boundary-discovery",
     # CMB Cold Spot boundary-first discovery
