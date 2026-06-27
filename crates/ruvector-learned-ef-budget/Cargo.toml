@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-learned-ef-budget"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Per-query learned beam-width (ef_search) predictor for HNSW that hits a target recall with minimum distance computations — adaptive search-budget allocation in safe Rust"
+readme = "README.md"
+keywords = ["vector-search", "ann", "hnsw", "adaptive", "learned-index"]
+categories = ["algorithms", "data-structures", "science"]
+
+[[bin]]
+name = "learned-ef-bench"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

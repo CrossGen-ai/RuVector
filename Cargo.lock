@@ -9799,6 +9799,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-learned-ef-budget"
+version = "2.2.3"
+dependencies = [
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-learning-wasm"
 version = "0.1.0"
 dependencies = [
@@ -10576,7 +10586,7 @@ version = "2.2.3"
 
 [[package]]
 name = "ruvector-timesfm"
-version = "2.2.3"
+version = "2.2.4"
 dependencies = [
  "anyhow",
  "candle-core 0.9.2",
@@ -12760,7 +12770,7 @@ dependencies = [
 
 [[package]]
 name = "timesfm"
-version = "2.2.3"
+version = "2.2.4"
 dependencies = [
  "anyhow",
  "candle-core 0.9.2",
