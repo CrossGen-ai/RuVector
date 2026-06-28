@@ -5202,7 +5202,7 @@ dependencies = [
  "hex",
  "regex-lite",
  "reqwest 0.12.28",
- "ruvector-sona 0.2.0",
+ "ruvector-sona 0.2.1",
  "serde",
  "serde_json",
  "sha3",
@@ -5237,7 +5237,7 @@ dependencies = [
  "ruvector-mincut 2.2.3",
  "ruvector-nervous-system",
  "ruvector-solver",
- "ruvector-sona 0.2.0",
+ "ruvector-sona 0.2.1",
  "ruvector-sparsifier",
  "ruvllm 2.2.3",
  "rvf-crypto",
@@ -7247,7 +7247,7 @@ dependencies = [
  "ruvector-mincut 2.2.3",
  "ruvector-nervous-system",
  "ruvector-raft",
- "ruvector-sona 0.2.0",
+ "ruvector-sona 0.2.1",
  "ruvllm 2.3.0",
  "serde",
  "serde_json",
@@ -9810,6 +9810,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-lorann"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-lsm-ann"
 version = "2.2.3"
 dependencies = [
@@ -10444,6 +10448,20 @@ dependencies = [
 [[package]]
 name = "ruvector-sona"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02a9465310393f43fc9ba2409cbf819c543ef16e0eb1791090351bfc4833c158"
+dependencies = [
+ "crossbeam",
+ "getrandom 0.2.17",
+ "parking_lot 0.12.5",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ruvector-sona"
+version = "0.2.1"
 dependencies = [
  "console_error_panic_hook",
  "criterion 0.5.1",
@@ -10460,20 +10478,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "ruvector-sona"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02a9465310393f43fc9ba2409cbf819c543ef16e0eb1791090351bfc4833c158"
-dependencies = [
- "crossbeam",
- "getrandom 0.2.17",
- "parking_lot 0.12.5",
- "rand 0.8.6",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -10576,7 +10580,7 @@ version = "2.2.3"
 
 [[package]]
 name = "ruvector-timesfm"
-version = "2.2.3"
+version = "2.2.4"
 dependencies = [
  "anyhow",
  "candle-core 0.9.2",
@@ -10926,7 +10930,7 @@ dependencies = [
  "ruvector-core 2.2.3",
  "ruvector-gnn",
  "ruvector-graph",
- "ruvector-sona 0.2.0",
+ "ruvector-sona 0.2.1",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -10962,7 +10966,7 @@ dependencies = [
  "rand 0.8.6",
  "regex",
  "ruvector-core 2.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "ruvector-sona 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ruvector-sona 0.2.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -11245,7 +11249,7 @@ dependencies = [
  "dashmap 6.2.1",
  "mockall",
  "parking_lot 0.12.5",
- "ruvector-sona 0.2.0",
+ "ruvector-sona 0.2.1",
  "rvagent-backends",
  "rvagent-core",
  "serde",
@@ -12760,7 +12764,7 @@ dependencies = [
 
 [[package]]
 name = "timesfm"
-version = "2.2.3"
+version = "2.2.4"
 dependencies = [
  "anyhow",
  "candle-core 0.9.2",

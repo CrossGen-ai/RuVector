@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-lorann"
+version = "0.1.0"
+edition = "2021"
+description = "LoRANN: per-cluster reduced-rank regression for approximate nearest neighbor search (ADR-272)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ruvnet/ruvector"
+autobenches = false
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bin]]
+name = "bench"
+path = "benches/lorann_bench.rs"
+
+[dependencies]
+
+[dev-dependencies]
