@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-cache-block-hnsw"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cache-block adjacency layout for HNSW: pack neighbor IDs + 4-bit distance sketches into 64-byte blocks for L2-hit-rate wins on graph traversal"
+repository = "https://github.com/CrossGen-ai/RuVector"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cache-block-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
