@@ -1,0 +1,27 @@
+[package]
+name = "ruvector-fasq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "FASQ: Frequency/Variance-Adaptive Scalar Quantization with per-dimension bit allocation via water-filling"
+
+[[bin]]
+name = "fasq-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "fasq_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
