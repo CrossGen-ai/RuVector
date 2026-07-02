@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-dgar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "DGAR: Distance-Gap Adaptive Rerank — query-adaptive K' selection for PQ + full-precision rerank pipelines"
+
+[[bin]]
+name = "dgar-bench"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
