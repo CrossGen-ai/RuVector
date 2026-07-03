@@ -1,0 +1,8 @@
+n=  2000 dim= 16 k= 10 p= 4 | pivot-tbl=   31.6KB | Lin dcos= 2000.0/q t=   0.43ms | Tri dcos= 1359.9/q ( 32.0% cut) t=   0.62ms | Pto dcos= 1341.2/q ( 32.9% cut) t=   1.53ms | Pto-vs-Tri +  1.4% cuts
+n=  2000 dim= 16 k= 10 p= 8 | pivot-tbl=   63.2KB | Lin dcos= 2000.0/q t=   0.42ms | Tri dcos=  756.6/q ( 62.2% cut) t=   0.77ms | Pto dcos=  698.3/q ( 65.1% cut) t=   4.27ms | Pto-vs-Tri +  7.7% cuts
+n=  2000 dim= 16 k= 10 p=16 | pivot-tbl=  127.0KB | Lin dcos= 2000.0/q t=   0.43ms | Tri dcos=  725.6/q ( 63.7% cut) t=   1.10ms | Pto dcos=  616.7/q ( 69.2% cut) t=  14.46ms | Pto-vs-Tri + 15.0% cuts
+n=  5000 dim= 32 k= 10 p= 8 | pivot-tbl=  157.5KB | Lin dcos= 5000.0/q t=   1.51ms | Tri dcos= 3104.2/q ( 37.9% cut) t=   1.99ms | Pto dcos= 2891.9/q ( 42.2% cut) t=  11.73ms | Pto-vs-Tri +  6.8% cuts
+n=  5000 dim= 64 k= 10 p= 8 | pivot-tbl=  158.5KB | Lin dcos= 5000.0/q t=   3.40ms | Tri dcos= 3939.8/q ( 21.2% cut) t=   3.68ms | Pto dcos= 3810.1/q ( 23.8% cut) t=  17.03ms | Pto-vs-Tri +  3.3% cuts
+n=  5000 dim=128 k= 10 p=12 | pivot-tbl=  240.9KB | Lin dcos= 5000.0/q t=   8.41ms | Tri dcos= 4558.8/q (  8.8% cut) t=   8.63ms | Pto dcos= 4430.3/q ( 11.4% cut) t=  34.29ms | Pto-vs-Tri +  2.8% cuts
+n= 10000 dim= 64 k= 20 p=12 | pivot-tbl=  472.3KB | Lin dcos=10000.0/q t=   7.53ms | Tri dcos= 6978.7/q ( 30.2% cut) t=   8.55ms | Pto dcos= 6476.4/q ( 35.2% cut) t=  50.80ms | Pto-vs-Tri +  7.2% cuts
+n= 20000 dim= 32 k= 10 p=10 | pivot-tbl=  782.9KB | Lin dcos=20000.0/q t=   5.30ms | Tri dcos=11797.3/q ( 41.0% cut) t=   8.36ms | Pto dcos=11564.2/q ( 42.2% cut) t=  67.06ms | Pto-vs-Tri +  2.0% cuts
