@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-specann"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Speculative ANN Search: draft-and-verify vector retrieval inspired by LLM speculative decoding"
+
+[[bin]]
+name = "specann-demo"
+path = "src/main.rs"
+
+[[bin]]
+name = "specann-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

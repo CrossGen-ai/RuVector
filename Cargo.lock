@@ -10564,6 +10564,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-specann"
+version = "2.2.3"
+dependencies = [
+ "rand 0.8.6",
+ "rand_distr 0.4.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-temporal-coherence"
 version = "0.1.0"
 dependencies = [
