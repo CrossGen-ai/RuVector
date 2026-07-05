@@ -272,6 +272,8 @@ members = [
     "crates/timesfm",
     # RuVector integration for TimesFM: Forecaster + anomaly bands + sweep early-stopping
     "crates/ruvector-timesfm",
+    # Cache-aware node reordering for HNSW-style graphs (nightly research 2026-07-05)
+    "crates/ruvector-gorder",
 ]
 resolver = "2"
 
