@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-blocked-bloom"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Blocked Bloom visited-set for HNSW traversal — SIMD-friendly cache-line-aligned dedup replacing HashSet<u32> with measured 2-4x throughput gains at bounded false-positive cost"
+
+[[bin]]
+name = "benchmark"
+path = "src/benchmark.rs"
+
+[[example]]
+name = "hnsw_walk"
+path = "examples/hnsw_walk.rs"
+
+[dependencies]
+rand = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

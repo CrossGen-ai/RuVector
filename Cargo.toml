@@ -272,6 +272,8 @@ members = [
     "crates/timesfm",
     # RuVector integration for TimesFM: Forecaster + anomaly bands + sweep early-stopping
     "crates/ruvector-timesfm",
+    # Blocked Bloom Visited-Set for HNSW traversal deduplication (ADR-272)
+    "crates/ruvector-blocked-bloom",
 ]
 resolver = "2"
 
