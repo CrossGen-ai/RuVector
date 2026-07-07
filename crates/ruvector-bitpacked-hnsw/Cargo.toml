@@ -1,0 +1,19 @@
+[package]
+name = "ruvector-bitpacked-hnsw"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Ruvector Team"]
+description = "Bit-packed and delta-encoded neighbor-list compression for HNSW graphs"
+
+[dependencies]
+
+[dev-dependencies]
+
+[[bin]]
+name = "bpk-bench"
+path = "src/bin/bench.rs"
+
+[[example]]
+name = "roundtrip"
+path = "examples/roundtrip.rs"
