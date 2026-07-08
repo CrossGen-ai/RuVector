@@ -1,0 +1,30 @@
+[package]
+name = "ruvector-extended-rabitq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Extended RaBitQ: multi-bit rotation-based scalar quantization for ANN with asymptotically optimal error"
+
+[[bin]]
+name = "erabitq-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "erabitq_bench"
+harness = false
+required-features = []
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[features]
+default = []
