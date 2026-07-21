@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-elastic-pq"
+version = "0.1.0"
+edition = "2021"
+description = "Elastic Bit Allocation Product Quantization (EBA-PQ) for RuVector — distortion-guided variable-width codebooks per subspace."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rand = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[[bench]]
+name = "eba_pq_bench"
+path = "benches/eba_pq_bench.rs"
+harness = false
+
+[[example]]
+name = "eba_pq_demo"
+path = "examples/eba_pq_demo.rs"

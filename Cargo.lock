@@ -9473,6 +9473,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-elastic-pq"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.6",
+ "rayon",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-exotic-wasm"
 version = "2.3.0"
 dependencies = [
