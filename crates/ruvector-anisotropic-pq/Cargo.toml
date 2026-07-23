@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version = "0.1.0"
+edition = "2021"
+description = "ScaNN-style anisotropic Product Quantization for high-recall MIPS/cosine ANN"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+rayon = "1.10"
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+# Note: benchmarks live inline in the `bench` example; no criterion harness
+# to keep dependencies minimal and produce copy-pastable stdout numbers.
