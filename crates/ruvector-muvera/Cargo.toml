@@ -1,0 +1,30 @@
+[workspace]
+# Standalone crate: opt out of the top-level ruvector workspace so this
+# PoC builds without pulling the full 160+ member workspace lockfile.
+
+[package]
+name = "ruvector-muvera"
+version = "0.1.0"
+edition = "2021"
+description = "MUVERA: Fixed-Dimensional Encodings for multi-vector (ColBERT) retrieval, in pure Rust"
+license = "Apache-2.0"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[dev-dependencies]
+
+[[example]]
+name = "muvera_bench"
+path = "examples/muvera_bench.rs"
+
+[[bench]]
+name = "muvera"
+path = "benches/muvera.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
