@@ -28,6 +28,7 @@ members = [
     "crates/ruvector-acorn-wasm",
     "crates/ruvector-coherence-hnsw",
     "crates/ruvector-rabitq",
+    "crates/ruvector-adsampling",
     "crates/ruvector-rabitq-wasm",
     "crates/ruvector-turbovec",
     "crates/ruvector-rulake",
