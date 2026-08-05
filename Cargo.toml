@@ -270,6 +270,8 @@ members = [
     "crates/ruvector-matryoshka",
     # PQ-ADC: Product Quantization with Asymmetric Distance Computation (64× compression)
     "crates/ruvector-pq-search",
+    # Anisotropic PQ: ScaNN-style score-aware codebook training for MIPS (ADR-296)
+    "crates/ruvector-anisotropic-pq",
     # SOTA benchmark suite (ADR-265)
     "crates/ruvector-sota-bench",
     # Capability-gated ANN: per-vector read access control with bitset tokens (ADR-268)

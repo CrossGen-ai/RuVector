@@ -1,0 +1,21 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Anisotropic (score-aware) Product Quantization for Maximum Inner Product Search — parallel-residual-weighted codebook training that preserves MIPS ranking better than symmetric PQ"
+keywords = ["vector-search", "ann", "product-quantization", "mips", "scann"]
+categories = ["algorithms", "data-structures", "science"]
+
+[[bin]]
+name = "aniso-pq-bench"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
