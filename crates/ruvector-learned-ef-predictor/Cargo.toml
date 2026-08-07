@@ -1,0 +1,12 @@
+[package]
+name = "ruvector-learned-ef-predictor"
+version = "0.1.0"
+edition = "2021"
+description = "Query-adaptive ef_search controller for HNSW: fixed, gap-ratio, and learned linear predictors."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
