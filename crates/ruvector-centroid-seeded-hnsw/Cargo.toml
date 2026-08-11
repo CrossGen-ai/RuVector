@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-centroid-seeded-hnsw"
+version = "0.1.0"
+edition = "2021"
+description = "Centroid-seeded entry points for HNSW / greedy k-NN graph search (nightly research 2026-08-10)"
+license = "MIT OR Apache-2.0"
+
+# Standalone crate — not a workspace member (kept out of parent workspace).
+[workspace]
+
+[dependencies]
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "seed_bench"
+path = "benches/seed_bench.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
