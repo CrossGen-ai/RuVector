@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-hnsw-rng-diverse"
+version = "0.1.0"
+edition = "2021"
+description = "RNG / α-pruned / naive neighbor selection for graph ANN — comparative nightly research 2026-08-11"
+license = "MIT OR Apache-2.0"
+
+# Standalone crate — its own workspace root, kept out of parent.
+[workspace]
+
+[dependencies]
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "prune_bench"
+path = "benches/prune_bench.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
