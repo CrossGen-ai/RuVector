@@ -1,0 +1,117 @@
+SOAR-IVF benchmark
+==================
+dataset  : n=20000 d=128 q=500 clusters=16   generated in 40.34ms
+gt (brute-force top-10) computed in 455.29ms
+built IVF-Single      in 1.89s
+built IVF-SpillTopK/2 in 1.87s
+built IVF-SpillTopK/3 in 1.93s
+built IVF-SOAR/2 λ=1  in 2.29s
+built IVF-SOAR/3 λ=1  in 2.82s
+=== EXACT scoring (rescan corpus with L2²) ===
+variant               n_probe  recall@10      µs/query    index_bytes   spill_overhead
+------------------------------------------------------------------------------------
+IVF-Single                  1     0.1758         20.33         389504                0
+IVF-Single                  2     0.3118         23.18         389504                0
+IVF-Single                  4     0.5210         33.22         389504                0
+IVF-Single                  8     0.8158         52.96         389504                0
+IVF-Single                 16     1.0000         74.15         389504                0
+IVF-Single                 32     1.0000        145.71         389504                0
+IVF-Single                 64     1.0000        328.98         389504                0
+IVF-SpillTopK/2             1     0.3044         22.62         629504            20000
+IVF-SpillTopK/2             2     0.5040         32.53         629504            20000
+IVF-SpillTopK/2             4     0.7516         48.72         629504            20000
+IVF-SpillTopK/2             8     0.9550         68.99         629504            20000
+IVF-SpillTopK/2            16     1.0000         77.41         629504            20000
+IVF-SpillTopK/2            32     1.0000        166.84         629504            20000
+IVF-SpillTopK/2            64     1.0000        352.88         629504            20000
+IVF-SpillTopK/3             1     0.4082         28.80         869504            40000
+IVF-SpillTopK/3             2     0.6312         45.73         869504            40000
+IVF-SpillTopK/3             4     0.8686         66.17         869504            40000
+IVF-SpillTopK/3             8     0.9902         79.92         869504            40000
+IVF-SpillTopK/3            16     1.0000         87.31         869504            40000
+IVF-SpillTopK/3            32     1.0000        208.43         869504            40000
+IVF-SpillTopK/3            64     1.0000        388.16         869504            40000
+IVF-SOAR/2 λ=1              1     0.2820         20.53         629504            20000
+IVF-SOAR/2 λ=1              2     0.4702         29.02         629504            20000
+IVF-SOAR/2 λ=1              4     0.7190         44.73         629504            20000
+IVF-SOAR/2 λ=1              8     0.9434         68.22         629504            20000
+IVF-SOAR/2 λ=1             16     1.0000         75.56         629504            20000
+IVF-SOAR/2 λ=1             32     1.0000        164.07         629504            20000
+IVF-SOAR/2 λ=1             64     1.0000        325.32         629504            20000
+IVF-SOAR/3 λ=1              1     0.3614         28.11         869504            40000
+IVF-SOAR/3 λ=1              2     0.5798         40.03         869504            40000
+IVF-SOAR/3 λ=1              4     0.8260         61.99         869504            40000
+IVF-SOAR/3 λ=1              8     0.9804         74.19         869504            40000
+IVF-SOAR/3 λ=1             16     1.0000         77.69         869504            40000
+IVF-SOAR/3 λ=1             32     1.0000        177.73         869504            40000
+IVF-SOAR/3 λ=1             64     1.0000        340.45         869504            40000
+=== APPROX scoring (centroid-anchored bound, NO corpus rescan) ===
+variant               n_probe  recall@10      µs/query    index_bytes   spill_overhead
+------------------------------------------------------------------------------------
+IVF-Single                  1     0.0798         13.67         389504                0
+IVF-Single                  2     0.0924         16.30         389504                0
+IVF-Single                  4     0.1030         23.31         389504                0
+IVF-Single                  8     0.1110         37.81         389504                0
+IVF-Single                 16     0.1126         54.87         389504                0
+IVF-Single                 32     0.1126        108.46         389504                0
+IVF-Single                 64     0.1126        217.75         389504                0
+IVF-SpillTopK/2             1     0.0950         15.01         629504            20000
+IVF-SpillTopK/2             2     0.1006         23.75         629504            20000
+IVF-SpillTopK/2             4     0.1136         36.83         629504            20000
+IVF-SpillTopK/2             8     0.1154         60.67         629504            20000
+IVF-SpillTopK/2            16     0.1146         76.16         629504            20000
+IVF-SpillTopK/2            32     0.1146        160.77         629504            20000
+IVF-SpillTopK/2            64     0.1146        311.96         629504            20000
+IVF-SpillTopK/3             1     0.1028         19.39         869504            40000
+IVF-SpillTopK/3             2     0.1092         29.61         869504            40000
+IVF-SpillTopK/3             4     0.1166         50.15         869504            40000
+IVF-SpillTopK/3             8     0.1172         71.71         869504            40000
+IVF-SpillTopK/3            16     0.1152         84.91         869504            40000
+IVF-SpillTopK/3            32     0.1152        191.33         869504            40000
+IVF-SpillTopK/3            64     0.1152        372.32         869504            40000
+IVF-SOAR/2 λ=1              1     0.0910         15.95         629504            20000
+IVF-SOAR/2 λ=1              2     0.1010         21.22         629504            20000
+IVF-SOAR/2 λ=1              4     0.1112         34.16         629504            20000
+IVF-SOAR/2 λ=1              8     0.1158         59.21         629504            20000
+IVF-SOAR/2 λ=1             16     0.1142         72.82         629504            20000
+IVF-SOAR/2 λ=1             32     0.1142        155.84         629504            20000
+IVF-SOAR/2 λ=1             64     0.1142        329.73         629504            20000
+IVF-SOAR/3 λ=1              1     0.1000         21.61         869504            40000
+IVF-SOAR/3 λ=1              2     0.1070         32.76         869504            40000
+IVF-SOAR/3 λ=1              4     0.1146         47.56         869504            40000
+IVF-SOAR/3 λ=1              8     0.1186         74.70         869504            40000
+IVF-SOAR/3 λ=1             16     0.1168         96.19         869504            40000
+IVF-SOAR/3 λ=1             32     0.1168        208.38         869504            40000
+IVF-SOAR/3 λ=1             64     0.1168        393.86         869504            40000
+[EXACT] SOAR headline (spill=2, equal probe budget):
+  n_probe= 1  SpillTopK=0.3044   SOAR=0.2820   Δ=-0.0224
+  n_probe= 2  SpillTopK=0.5040   SOAR=0.4702   Δ=-0.0338
+  n_probe= 4  SpillTopK=0.7516   SOAR=0.7190   Δ=-0.0326
+  n_probe= 8  SpillTopK=0.9550   SOAR=0.9434   Δ=-0.0116
+  n_probe=16  SpillTopK=1.0000   SOAR=1.0000   Δ=+0.0000
+  n_probe=32  SpillTopK=1.0000   SOAR=1.0000   Δ=+0.0000
+  n_probe=64  SpillTopK=1.0000   SOAR=1.0000   Δ=+0.0000
+[EXACT] SOAR headline (spill=3, equal probe budget):
+  n_probe= 1  SpillTopK=0.4082   SOAR=0.3614   Δ=-0.0468
+  n_probe= 2  SpillTopK=0.6312   SOAR=0.5798   Δ=-0.0514
+  n_probe= 4  SpillTopK=0.8686   SOAR=0.8260   Δ=-0.0426
+  n_probe= 8  SpillTopK=0.9902   SOAR=0.9804   Δ=-0.0098
+  n_probe=16  SpillTopK=1.0000   SOAR=1.0000   Δ=+0.0000
+  n_probe=32  SpillTopK=1.0000   SOAR=1.0000   Δ=+0.0000
+  n_probe=64  SpillTopK=1.0000   SOAR=1.0000   Δ=+0.0000
+[APPROX] SOAR headline (spill=2, equal probe budget):
+  n_probe= 1  SpillTopK=0.0950   SOAR=0.0910   Δ=-0.0040
+  n_probe= 2  SpillTopK=0.1006   SOAR=0.1010   Δ=+0.0004
+  n_probe= 4  SpillTopK=0.1136   SOAR=0.1112   Δ=-0.0024
+  n_probe= 8  SpillTopK=0.1154   SOAR=0.1158   Δ=+0.0004
+  n_probe=16  SpillTopK=0.1146   SOAR=0.1142   Δ=-0.0004
+  n_probe=32  SpillTopK=0.1146   SOAR=0.1142   Δ=-0.0004
+  n_probe=64  SpillTopK=0.1146   SOAR=0.1142   Δ=-0.0004
+[APPROX] SOAR headline (spill=3, equal probe budget):
+  n_probe= 1  SpillTopK=0.1028   SOAR=0.1000   Δ=-0.0028
+  n_probe= 2  SpillTopK=0.1092   SOAR=0.1070   Δ=-0.0022
+  n_probe= 4  SpillTopK=0.1166   SOAR=0.1146   Δ=-0.0020
+  n_probe= 8  SpillTopK=0.1172   SOAR=0.1186   Δ=+0.0014
+  n_probe=16  SpillTopK=0.1152   SOAR=0.1168   Δ=+0.0016
+  n_probe=32  SpillTopK=0.1152   SOAR=0.1168   Δ=+0.0016
+  n_probe=64  SpillTopK=0.1152   SOAR=0.1168   Δ=+0.0016
