@@ -10486,6 +10486,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-soar-ivf"
+version = "2.3.0"
+
+[[package]]
 name = "ruvector-solver"
 version = "2.3.0"
 dependencies = [

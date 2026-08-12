@@ -291,6 +291,8 @@ members = [
     "crates/ruvector-timesfm",
     # Speculative ANN search: draft-verify with adaptive candidate multiplier (ADR-272)
     "crates/ruvector-speculative-ann",
+    # SOAR: Spilling with Orthogonality-Amplified Residuals for IVF (ADR-300)
+    "crates/ruvector-soar-ivf",
 ]
 resolver = "2"
 
