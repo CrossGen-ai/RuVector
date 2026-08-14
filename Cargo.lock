@@ -10843,6 +10843,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-visited-filter"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+]
+
+[[package]]
 name = "ruvector-wasm"
 version = "2.3.0"
 dependencies = [

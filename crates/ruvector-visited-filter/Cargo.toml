@@ -1,0 +1,19 @@
+[package]
+name = "ruvector-visited-filter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Pluggable visited-set filters for graph ANN traversal (HashSet, bitmap, generation-tagged) with real benchmarks."
+
+[dependencies]
+rand = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+
+[[bin]]
+name = "vf-bench"
+path = "src/bin/bench.rs"
