@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-rpq"
+version = "0.1.0"
+edition = "2021"
+description = "Residual Product Quantization (RPQ2) for high-compression, high-recall ANN — three swappable backends"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rpq-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+
+[dev-dependencies]

@@ -53,6 +53,7 @@ members = [
     "crates/ruvector-tiny-dancer-wasm",
     "crates/ruvector-tiny-dancer-node",
     "crates/ruvector-collections",
+    "crates/ruvector-rpq",
     "crates/ruvector-cluster",
     "crates/ruvector-raft",
     "crates/ruvector-replication",
