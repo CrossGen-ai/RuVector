@@ -302,6 +302,7 @@ members = [
     "crates/ruvector-streaming-qng",
     # Entropy-adaptive ANN beam search: live Shannon entropy gates beam width (ADR-303)
     "crates/ruvector-entropy-ann",
+    "crates/ruvector-learned-termination",
 ]
 resolver = "2"
 

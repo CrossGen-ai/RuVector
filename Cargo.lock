@@ -9908,6 +9908,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-learned-termination"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-learning-wasm"
 version = "0.1.0"
 dependencies = [
