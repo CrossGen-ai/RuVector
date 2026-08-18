@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-hnsw-reorder"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cache-locality node reordering for HNSW-style ANN graphs (Gorder / recursive graph bisection)"
+publish = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rayon = { workspace = true }
+
+[dev-dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[[bin]]
+name = "reorder-bench"
+path = "src/bin/reorder_bench.rs"
