@@ -27,6 +27,7 @@ exclude = ["external/ruqu", "external/rvdna", "examples/OSpipe", "examples/rvf",
     "crates/rvforge-reader"]
 members = [
     "crates/ruvector-bounded-rag",
+    "crates/ruvector-topk-stability-terminate",
     "crates/ruvector-temporal-coherence",
     "crates/ruvector-acorn",
     "crates/ruvector-acorn-wasm",

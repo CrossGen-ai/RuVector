@@ -1,0 +1,17 @@
+[package]
+name = "ruvector-topk-stability-terminate"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Kendall-tau top-k stability early termination for ANN beam search (research PoC, ADR-305)."
+
+[dependencies]
+
+[dev-dependencies]
+
+[[bin]]
+name = "topk-stability-bench"
+path = "src/bin/bench.rs"
+
+[lib]
+path = "src/lib.rs"

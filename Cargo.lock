@@ -10795,6 +10795,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-topk-stability-terminate"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-turboquant"
 version = "2.3.0"
 dependencies = [
