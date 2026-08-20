@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Anisotropic Product Quantization for ruvector — score-aware PQ codebooks (ScaNN-style) with optional learned orthogonal rotation (OPQ), plus a swappable Quantizer trait supporting Plain / Anisotropic / Anisotropic+Rotation variants for high-recall MIPS/ANN"
+readme = "README.md"
+keywords = ["vector-search", "quantization", "anisotropic", "product-quantization", "ann"]
+categories = ["algorithms", "data-structures", "science"]
+
+[[bin]]
+name = "anisotropic-pq-bench"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[lib]
+path = "src/lib.rs"
