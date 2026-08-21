@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-hamming-cascade"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "MIT OR Apache-2.0"
+description = "Cascade ANN retrieval: 1-bit Hamming filter -> INT8 rerank -> FP32 exact rerank."
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "cascade_bench"
+harness = false
+
+[[example]]
+name = "quickstart"
+path = "examples/quickstart.rs"
+
+[[bin]]
+name = "cascade-report"
+path = "src/bin/report.rs"

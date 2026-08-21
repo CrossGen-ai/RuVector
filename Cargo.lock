@@ -9882,6 +9882,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-hamming-cascade"
+version = "2.3.0"
+dependencies = [
+ "criterion 0.5.1",
+]
+
+[[package]]
 name = "ruvector-hnsw-repair"
 version = "2.3.0"
 dependencies = [
