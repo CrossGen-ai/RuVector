@@ -47,6 +47,8 @@ exclude = ["external/ruqu", "external/rvdna", "examples/OSpipe", "examples/rvf",
     # dropped from InferenceConfig/ModelMetadata).
     "crates/ruvector-sparse-inference-wasm"]
 members = [
+    # Nightly research (ADR-339): SOAR spilling with orthogonality-amplified residuals.
+    "crates/ruvector-soar",
     "crates/ruvector-bounded-rag",
     "crates/ruvector-temporal-coherence",
     "crates/ruvector-acorn",

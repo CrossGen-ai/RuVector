@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-soar"
+version = "0.1.0"
+edition = "2021"
+description = "SOAR (Spilling with Orthogonality-Amplified Residuals) partition spilling for IVF ANN search (nightly research ADR-339)"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+
+[[bin]]
+name = "soar-bench"
+path = "src/bin/bench.rs"
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+
+[lib]
+path = "src/lib.rs"
