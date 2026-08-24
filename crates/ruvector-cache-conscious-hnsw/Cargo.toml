@@ -1,0 +1,23 @@
+[package]
+name = "ruvector-cache-conscious-hnsw"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cache-conscious HNSW node layout for RuVector — BFS and Reverse Cuthill-McKee reordering of graph vertices to improve query throughput via better spatial cache locality"
+readme = "README.md"
+keywords = ["vector-search", "hnsw", "cache", "locality", "ann"]
+categories = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[dependencies]
+rand       = { workspace = true }
+rand_distr = { workspace = true }
+
+[lints.rust]
+dead_code = "allow"
+unused_variables = "allow"
