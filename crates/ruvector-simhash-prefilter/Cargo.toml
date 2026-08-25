@@ -1,0 +1,30 @@
+[package]
+name = "ruvector-simhash-prefilter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "SimHash / signed-random-projection binary prefilter for HNSW & brute-force ANN candidate reduction"
+
+[[bin]]
+name = "simhash-prefilter-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "simhash_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
