@@ -9331,6 +9331,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-delta-varint-hnsw-adjacency"
+version = "2.3.0"
+
+[[package]]
 name = "ruvector-delta-wasm"
 version = "0.1.0"
 dependencies = [

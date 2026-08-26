@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-delta-varint-hnsw-adjacency"
+version.workspace = true
+edition.workspace = true
+description = "Delta+Varint and PFor-blocked adjacency compression for HNSW graphs — memory-efficient, cache-friendly neighbor storage"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[dev-dependencies]
+
+[[bench]]
+name = "adjacency_bench"
+harness = false
+
+[[example]]
+name = "quickstart"
+path = "examples/quickstart.rs"
