@@ -1,0 +1,23 @@
+[package]
+name = "ruvector-avq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Anisotropic Vector Quantization (AVQ) — score-aware product-quantization codebooks for inner-product ANN search (Guo et al., ScaNN, ICML 2020)"
+readme = "README.md"
+keywords = ["vector-search", "quantization", "ann", "avq", "scann"]
+categories = ["algorithms", "science"]
+
+[[bin]]
+name = "avq-benchmark"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
