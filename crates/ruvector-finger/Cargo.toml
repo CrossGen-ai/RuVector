@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-finger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "FINGER: fast HNSW/graph distance approximation via low-rank residual projection (Yin et al., 2023)"
+
+[[bin]]
+name = "finger-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "finger_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
