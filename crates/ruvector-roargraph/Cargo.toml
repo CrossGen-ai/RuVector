@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-roargraph"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "RoarGraph-inspired out-of-distribution ANN with bipartite query-projected augmentation for cross-modal RAG - three measured variants (flat, k-NN graph, RoarGraph-lite)"
+keywords = ["vector-search", "ann", "ood", "cross-modal", "rag"]
+categories = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[dependencies]
+
+[dev-dependencies]

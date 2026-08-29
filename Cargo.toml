@@ -315,6 +315,8 @@ members = [
     "crates/ruvector-recall-bounded",
     # Adaptive recall-targeted ANN: auto-calibrated ef for user-specified recall targets (ADR-272)
     "crates/ruvector-adaptive-ann",
+    # RoarGraph OOD bipartite projection ANN for cross-modal RAG (nightly 2026-08-29)
+    "crates/ruvector-roargraph",
     # SPANN partition spilling for boundary-safe ANN (ADR-268)
     "crates/ruvector-spann",
     # ColBERT-style multi-vector MaxSim late-interaction search
