@@ -1,0 +1,23 @@
+[package]
+name = "ruvector-graph-locality-hnsw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Graph-locality vector storage reordering for HNSW (2026-08-30 nightly research, ADR-341)"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bin]]
+name = "reorder-bench"
+path = "src/bin/reorder_bench.rs"
+
+[lib]
+path = "src/lib.rs"
