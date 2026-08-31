@@ -10134,6 +10134,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-prefetch-guided-ivf-scan"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-profiler"
 version = "2.3.0"
 dependencies = [

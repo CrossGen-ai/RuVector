@@ -1,0 +1,283 @@
+# Benchmark run: 2026-08-31T16:16:54Z
+# Host: Darwin Seans-MacBook-Pro-6.local 24.6.0 Darwin Kernel Version 24.6.0: Mon Jul 14 11:30:40 PDT 2025; root:xnu-11417.140.69~1/RELEASE_ARM64_T6041 arm64
+# CPU: Apple M4 Max
+# rustc: rustc 1.89.0 (29483883e 2025-08-04)
+# Build: cargo run --release --example bench_scan -p ruvector-prefetch-guided-ivf-scan
+
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-prefetch-guided-ivf-scan/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-acorn-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-rabitq-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-node/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/cognitum-gate-kernel/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-router-cli/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-router-ffi/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-router-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-tiny-dancer-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-graph-node/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-graph-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-gnn-node/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-gnn-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-attention-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-attention-node/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-cnn-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-mincut-gated-transformer-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-hailo-cluster/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/examples/google-cloud/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/rvlite/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-dag-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-nervous-system-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-economy-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-learning-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-exotic-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-attention-unified-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-fpga-transformer-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-delta-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-domain-expansion-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-solver-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-solver-node/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-verified-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-graph-transformer-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-graph-transformer-node/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/types/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/region/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/cap/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/proof/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/nucleus/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/shell/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/tests/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/benches/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/examples/cognitive_demo/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-consciousness-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-decompiler-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-entropy-ann/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-attention/Cargo.toml: file `/Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-attention/benches/attention_benchmarks.rs` found to be present in multiple build targets:
+  * `bin` target `bench_runner`
+  * `bench` target `attention_benchmarks`
+    Finished `release` profile [optimized] target(s) in 0.23s
+     Running `target/release/examples/bench_scan`
+# ruvector-prefetch-guided-ivf-scan bench
+# hardware: run `uname -a; sysctl -n machdep.cpu.brand_string` from the shell
+# CSV columns:
+dim,n_vectors,variant,lookahead,queries,avg_ns_per_query,ns_per_dot
+64,10000,no_prefetch,0,400,203019.6,20.302
+64,10000,fixed,1,400,200630.4,20.063
+64,10000,fixed,4,400,204464.0,20.446
+64,10000,fixed,8,400,206425.1,20.643
+64,10000,fixed,16,400,201077.8,20.108
+64,10000,adaptive,1,400,199782.4,19.978
+128,10000,no_prefetch,0,300,361757.9,36.176
+128,10000,fixed,1,300,386524.7,38.652
+128,10000,fixed,4,300,374358.9,37.436
+128,10000,fixed,8,300,379414.9,37.941
+128,10000,fixed,16,300,372693.2,37.269
+128,10000,adaptive,1,300,404979.9,40.498
+256,10000,no_prefetch,0,200,762774.8,76.277
+256,10000,fixed,1,200,773120.0,77.312
+256,10000,fixed,4,200,736315.4,73.632
+256,10000,fixed,8,200,734690.0,73.469
+256,10000,fixed,16,200,764106.7,76.411
+256,10000,adaptive,1,200,758145.8,75.815
+512,10000,no_prefetch,0,100,1449860.8,144.986
+512,10000,fixed,1,100,1616361.2,161.636
+512,10000,fixed,4,100,1567133.3,156.713
+512,10000,fixed,8,100,1585250.8,158.525
+512,10000,fixed,16,100,1556829.6,155.683
+512,10000,adaptive,1,100,1558396.7,155.840
+128,50000,no_prefetch,0,100,1765342.1,35.307
+128,50000,fixed,1,100,2008801.2,40.176
+128,50000,fixed,4,100,2019535.8,40.391
+128,50000,fixed,8,100,1899297.9,37.986
+128,50000,fixed,16,100,1889501.7,37.790
+128,50000,adaptive,1,100,1905459.6,38.109
+128,200000,no_prefetch,0,30,7096925.0,35.485
+128,200000,fixed,1,30,7635351.4,38.177
+128,200000,fixed,4,30,7836240.3,39.181
+128,200000,fixed,8,30,7540869.4,37.704
+128,200000,fixed,16,30,7445847.2,37.229
+128,200000,adaptive,1,30,7884881.9,39.424
+128,10000,strided_no_pf,0,100,423843.3,42.384
+128,10000,strided_pf,1,100,438370.8,43.837
+128,10000,strided_pf,4,100,413233.8,41.323
+128,10000,strided_pf,8,100,402654.6,40.265
+128,10000,strided_pf,16,100,394093.3,39.409
+128,50000,strided_no_pf,0,30,3916220.8,78.324
+128,50000,strided_pf,1,30,2367733.3,47.355
+128,50000,strided_pf,4,30,1989484.7,39.790
+128,50000,strided_pf,8,30,1910173.6,38.203
+128,50000,strided_pf,16,30,1908427.8,38.169
+128,200000,strided_no_pf,0,15,30189802.7,150.949
+128,200000,strided_pf,1,15,15897600.0,79.488
+128,200000,strided_pf,4,15,8097950.0,40.490
+128,200000,strided_pf,8,15,7736608.3,38.683
+128,200000,strided_pf,16,15,7775822.2,38.879
+256,20000,strided_no_pf,0,30,1999680.6,99.984
+256,20000,strided_pf,1,30,1490813.9,74.541
+256,20000,strided_pf,4,30,1475687.5,73.784
+256,20000,strided_pf,8,30,1469127.8,73.456
+256,20000,strided_pf,16,30,1473052.8,73.653
+
+=== Speedup summary (higher = faster than no_prefetch) ===
+
+-- dim=64 n=10000 baseline=203019.6 ns/query (20.302 ns/dot) --
+     fixed la= 1    200630.4 ns/query   20.063 ns/dot  speedup=1.012x
+     fixed la= 4    204464.0 ns/query   20.446 ns/dot  speedup=0.993x
+     fixed la= 8    206425.1 ns/query   20.643 ns/dot  speedup=0.984x
+     fixed la=16    201077.8 ns/query   20.108 ns/dot  speedup=1.010x
+  adaptive la= 1    199782.4 ns/query   19.978 ns/dot  speedup=1.016x
+
+-- dim=128 n=10000 baseline=361757.9 ns/query (36.176 ns/dot) --
+     fixed la= 1    386524.7 ns/query   38.652 ns/dot  speedup=0.936x
+     fixed la= 4    374358.9 ns/query   37.436 ns/dot  speedup=0.966x
+     fixed la= 8    379414.9 ns/query   37.941 ns/dot  speedup=0.953x
+     fixed la=16    372693.2 ns/query   37.269 ns/dot  speedup=0.971x
+  adaptive la= 1    404979.9 ns/query   40.498 ns/dot  speedup=0.893x
+
+-- dim=256 n=10000 baseline=762774.8 ns/query (76.277 ns/dot) --
+     fixed la= 1    773120.0 ns/query   77.312 ns/dot  speedup=0.987x
+     fixed la= 4    736315.4 ns/query   73.632 ns/dot  speedup=1.036x
+     fixed la= 8    734690.0 ns/query   73.469 ns/dot  speedup=1.038x
+     fixed la=16    764106.7 ns/query   76.411 ns/dot  speedup=0.998x
+  adaptive la= 1    758145.8 ns/query   75.815 ns/dot  speedup=1.006x
+
+-- dim=512 n=10000 baseline=1449860.8 ns/query (144.986 ns/dot) --
+     fixed la= 1   1616361.2 ns/query  161.636 ns/dot  speedup=0.897x
+     fixed la= 4   1567133.3 ns/query  156.713 ns/dot  speedup=0.925x
+     fixed la= 8   1585250.8 ns/query  158.525 ns/dot  speedup=0.915x
+     fixed la=16   1556829.6 ns/query  155.683 ns/dot  speedup=0.931x
+  adaptive la= 1   1558396.7 ns/query  155.840 ns/dot  speedup=0.930x
+
+-- dim=128 n=50000 baseline=1765342.1 ns/query (35.307 ns/dot) --
+     fixed la= 1   2008801.2 ns/query   40.176 ns/dot  speedup=0.879x
+     fixed la= 4   2019535.8 ns/query   40.391 ns/dot  speedup=0.874x
+     fixed la= 8   1899297.9 ns/query   37.986 ns/dot  speedup=0.929x
+     fixed la=16   1889501.7 ns/query   37.790 ns/dot  speedup=0.934x
+  adaptive la= 1   1905459.6 ns/query   38.109 ns/dot  speedup=0.926x
+
+-- dim=128 n=200000 baseline=7096925.0 ns/query (35.485 ns/dot) --
+     fixed la= 1   7635351.4 ns/query   38.177 ns/dot  speedup=0.929x
+     fixed la= 4   7836240.3 ns/query   39.181 ns/dot  speedup=0.906x
+     fixed la= 8   7540869.4 ns/query   37.704 ns/dot  speedup=0.941x
+     fixed la=16   7445847.2 ns/query   37.229 ns/dot  speedup=0.953x
+  adaptive la= 1   7884881.9 ns/query   39.424 ns/dot  speedup=0.900x
+
+=== Strided speedup summary ===
+
+-- dim=128 n=10000 strided_baseline=423843.3 ns/query (42.384 ns/dot) --
+  strided_pf la= 1    438370.8 ns/query   43.837 ns/dot  speedup=0.967x
+  strided_pf la= 4    413233.8 ns/query   41.323 ns/dot  speedup=1.026x
+  strided_pf la= 8    402654.6 ns/query   40.265 ns/dot  speedup=1.053x
+  strided_pf la=16    394093.3 ns/query   39.409 ns/dot  speedup=1.075x
+
+-- dim=128 n=50000 strided_baseline=3916220.8 ns/query (78.324 ns/dot) --
+  strided_pf la= 1   2367733.3 ns/query   47.355 ns/dot  speedup=1.654x
+  strided_pf la= 4   1989484.7 ns/query   39.790 ns/dot  speedup=1.968x
+  strided_pf la= 8   1910173.6 ns/query   38.203 ns/dot  speedup=2.050x
+  strided_pf la=16   1908427.8 ns/query   38.169 ns/dot  speedup=2.052x
+
+-- dim=128 n=200000 strided_baseline=30189802.7 ns/query (150.949 ns/dot) --
+  strided_pf la= 1  15897600.0 ns/query   79.488 ns/dot  speedup=1.899x
+  strided_pf la= 4   8097950.0 ns/query   40.490 ns/dot  speedup=3.728x
+  strided_pf la= 8   7736608.3 ns/query   38.683 ns/dot  speedup=3.902x
+  strided_pf la=16   7775822.2 ns/query   38.879 ns/dot  speedup=3.883x
+
+-- dim=256 n=20000 strided_baseline=1999680.6 ns/query (99.984 ns/dot) --
+  strided_pf la= 1   1490813.9 ns/query   74.541 ns/dot  speedup=1.341x
+  strided_pf la= 4   1475687.5 ns/query   73.784 ns/dot  speedup=1.355x
+  strided_pf la= 8   1469127.8 ns/query   73.456 ns/dot  speedup=1.361x
+  strided_pf la=16   1473052.8 ns/query   73.653 ns/dot  speedup=1.358x
+

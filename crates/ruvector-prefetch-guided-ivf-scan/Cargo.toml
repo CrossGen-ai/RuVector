@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-prefetch-guided-ivf-scan"
+version = "0.1.0"
+edition = "2021"
+description = "Software-prefetch-guided IVF (inverted-file) scan for ANN, portable across x86_64 and aarch64 on stable Rust."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "bench_scan"
+path = "examples/bench_scan.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
