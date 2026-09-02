@@ -1,0 +1,22 @@
+[workspace]
+
+[package]
+name = "ruvector-cache-oblivious-hnsw"
+version = "0.1.0"
+edition = "2021"
+description = "Cache-oblivious HNSW graph layouts (BFS / DFS / van Emde Boas) for RuVector nightly research 2026-09-02"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

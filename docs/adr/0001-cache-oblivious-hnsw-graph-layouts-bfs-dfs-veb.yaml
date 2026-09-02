@@ -1,0 +1,55 @@
+# 0001.yaml — ADR sidecar (src/core/plugins/core/schema/adr-sidecar.schema.yaml, version 1).
+# Scaffolded by `cga-core-adr new`, then edited directly. Creating an ADR is gated
+# (adr-via-cli); editing one is not. Add a row per TC-N in the .md — adr-lint
+# checks both directions, so a criterion with no row is a lint failure.
+adr: "0001"
+title: "Cache-oblivious HNSW graph layouts (BFS/DFS/vEB)"
+status: Proposed
+added: 2026-09-02
+updated: 2026-09-02
+deciders: []
+drivers: "HNSW greedy search is memory-bound at 128-d f32; static node layout is the untouched lever."
+
+verify:
+  - tc: TC-1
+    scope: observation
+    target: "cargo:test -p ruvector-cache-oblivious-hnsw"
+    note: "All three layouts build without error at N=800; 3 unit tests pass."
+    observation_detail:
+      method: "cd crates/ruvector-cache-oblivious-hnsw && cargo test --release"
+      stale_after_days: 180
+    last_result: pass
+  - tc: TC-2
+    scope: observation
+    target: "cargo:test permutation_is_a_bijection_all_layouts"
+    note: "Every layout produces a bijective permutation over the node set."
+    observation_detail:
+      method: "cargo test --release permutation_is_a_bijection_all_layouts"
+      stale_after_days: 180
+    last_result: pass
+  - tc: TC-3
+    scope: observation
+    target: "cargo:test layouts_return_identical_top1_for_stored_queries"
+    note: "Top-1 agrees on stored queries — layouts change memory only."
+    observation_detail:
+      method: "cargo test --release layouts_return_identical_top1_for_stored_queries"
+      stale_after_days: 180
+    last_result: pass
+  - tc: TC-4
+    scope: observation
+    target: "cargo:run --example bench"
+    note: "vEB reduces latency by ≥10% vs BFS (measured 18.8% on M4 Max)."
+    observation_detail:
+      method: "cargo run --release --example bench and compare BFS vs vEB rows"
+      stale_after_days: 180
+    last_result: pass
+  - tc: TC-5
+    scope: observation
+    target: "cargo:run --example bench visited count"
+    note: "Visited/dist counts identical across layouts (isolates cache effect)."
+    observation_detail:
+      method: "bench output — visited/q equal across BFS/DFS/vEB rows"
+      stale_after_days: 180
+    last_result: pass
+
+enforce: []
