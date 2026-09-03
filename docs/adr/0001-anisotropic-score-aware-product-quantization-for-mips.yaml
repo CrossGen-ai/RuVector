@@ -1,0 +1,23 @@
+# 0001.yaml — ADR sidecar (src/core/plugins/core/schema/adr-sidecar.schema.yaml, version 1).
+# Scaffolded by `cga-core-adr new`, then edited directly. Creating an ADR is gated
+# (adr-via-cli); editing one is not. Add a row per TC-N in the .md — adr-lint
+# checks both directions, so a criterion with no row is a lint failure.
+adr: "0001"
+title: "Anisotropic score-aware product quantization for MIPS"
+status: Proposed
+added: 2026-09-03
+updated: 2026-09-03
+deciders: []
+drivers: ""
+
+verify:
+  - tc: TC-1
+    scope: observation
+    target: "manual:tc-1-0001"
+    note: "state WHY this target proves the criterion"
+    observation_detail:
+      method: "the exact procedure, reproducible by a person"
+      stale_after_days: 180
+    last_result: unrun
+
+enforce: []

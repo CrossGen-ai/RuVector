@@ -1,0 +1,17 @@
+[package]
+name = "ruvector-anisotropic-pq"
+version = "0.1.0"
+edition = "2021"
+description = "Anisotropic score-aware product quantization: reweights parallel vs. orthogonal residual error to preserve maximum-inner-product-search (MIPS) scores, following the ScaNN loss (Guo et al. 2020)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ruvnet/ruvector"
+keywords = ["ann", "pq", "mips", "scann", "quantization"]
+categories = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
