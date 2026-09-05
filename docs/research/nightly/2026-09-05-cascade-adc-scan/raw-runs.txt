@@ -1,0 +1,13 @@
+Cascade-ADC benchmark
+---------------------
+n=200000 d=128 m=32 nq=200 k=10 clusters=64
+index built in 2.00s
+  codes8 bytes=6400000  codes4 bytes=3200000
+brute-force ground truth in 1.80s
+
+Results:
+  full-8bit    bytes/vec=  32  qps=     411.9  recall@10=0.4625  total=0.486s
+  full-4bit    bytes/vec=  16  qps=     497.3  recall@10=0.1685  total=0.402s
+  cascade-rho0.05 bytes/vec=  48  qps=     464.3  recall@10=0.4595  total=0.431s
+  cascade-rho0.10 bytes/vec=  48  qps=     428.3  recall@10=0.4625  total=0.467s
+  cascade-rho0.20 bytes/vec=  48  qps=     398.5  recall@10=0.4625  total=0.502s
