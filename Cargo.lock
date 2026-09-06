@@ -10255,6 +10255,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-rknn-verified"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-robotics"
 version = "0.1.0"
 dependencies = [

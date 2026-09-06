@@ -1,0 +1,39 @@
+# 0001.yaml — ADR sidecar (src/core/plugins/core/schema/adr-sidecar.schema.yaml, version 1).
+# Scaffolded by `cga-core-adr new`, then edited directly. Creating an ADR is gated
+# (adr-via-cli); editing one is not. Add a row per TC-N in the .md — adr-lint
+# checks both directions, so a criterion with no row is a lint failure.
+adr: "0001"
+title: "Add Reverse-KNN Verified Retrieval as a backend-agnostic precision filter"
+status: Proposed
+added: 2026-09-06
+updated: 2026-09-06
+deciders: []
+drivers: ""
+
+verify:
+  - tc: TC-1
+    scope: observation
+    target: "manual:tc-1-0001"
+    note: "benchmark's own acceptance line proves precision does not regress vs the baseline noisy-ANN pass — this is the whole point of the filter"
+    observation_detail:
+      method: "run `cargo run --release -p ruvector-rknn-verified --bin benchmark`; check that the line 'cached_precision >= baseline_precision : true' is printed and exit code is 0"
+      stale_after_days: 180
+    last_result: pass
+  - tc: TC-2
+    scope: observation
+    target: "manual:tc-2-0001"
+    note: "guards the cached-vs-live latency ratio so a future implementation change cannot silently make cached mode as slow as live"
+    observation_detail:
+      method: "same benchmark run; check that the line 'cached_latency <= 4x live_latency : true' is printed"
+      stale_after_days: 180
+    last_result: pass
+  - tc: TC-3
+    scope: observation
+    target: "manual:tc-3-0001"
+    note: "keeps the crate a leaf: no dep churn on the workspace when we add this filter"
+    observation_detail:
+      method: "run `cargo build --release -p ruvector-rknn-verified` and `cargo test --release -p ruvector-rknn-verified`; both exit 0. Confirm `crates/ruvector-rknn-verified/Cargo.toml` contains no `[dependencies]` table."
+      stale_after_days: 180
+    last_result: pass
+
+enforce: []
