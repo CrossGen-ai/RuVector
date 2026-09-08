@@ -1,0 +1,23 @@
+[package]
+name = "ruvector-succinct-hnsw"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Memory-efficient NSW/HNSW adjacency via BFS-reordering plus delta + VarByte encoding — swappable backends measured end-to-end"
+readme = "README.md"
+keywords = ["vector-search", "ann", "hnsw", "succinct", "compression"]
+categories = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[dependencies]
+rand       = { workspace = true }
+rand_distr = { workspace = true }
+
+[lints.rust]
+dead_code = "allow"
+unused_variables = "allow"

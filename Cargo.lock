@@ -9848,6 +9848,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-landmark-alt-hnsw"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_distr 0.4.3",
+]
+
+[[package]]
 name = "ruvector-learning-wasm"
 version = "0.1.0"
 dependencies = [
@@ -10657,6 +10665,14 @@ dependencies = [
 
 [[package]]
 name = "ruvector-streaming-qng"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_distr 0.4.3",
+]
+
+[[package]]
+name = "ruvector-succinct-hnsw"
 version = "2.3.0"
 dependencies = [
  "rand 0.8.6",
