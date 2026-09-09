@@ -1,0 +1,17 @@
+[package]
+name = "ruvector-hnsw-delta-neighbors"
+version = "0.1.0"
+edition = "2021"
+description = "Delta-encoded, bit-packed neighbor-list compression for HNSW-style graphs with locality-preserving ID remapping."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[[bin]]
+name = "delta-neighbors-bench"
+path = "src/bin/bench.rs"
+
+[lib]
+path = "src/lib.rs"
