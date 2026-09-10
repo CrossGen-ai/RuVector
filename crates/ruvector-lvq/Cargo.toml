@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-lvq"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Locally-adaptive Vector Quantization (LVQ) — per-vector scalar quantization with 8-bit, 4-bit, and residual 4x8-bit variants for compressed ANN. Inspired by Intel Scalable Vector Search (Aguerrebere et al., VLDB 2023)."
+readme = "README.md"
+keywords = ["vector-search", "ann", "quantization", "lvq", "compression"]
+categories = ["algorithms", "data-structures"]
+
+[dependencies]
+rand       = { workspace = true }
+rand_distr = { workspace = true }
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[lib]
+path = "src/lib.rs"
