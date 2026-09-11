@@ -10682,6 +10682,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-ternary"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_distr 0.4.3",
+]
+
+[[package]]
 name = "ruvector-timesfm"
 version = "2.2.4"
 dependencies = [
