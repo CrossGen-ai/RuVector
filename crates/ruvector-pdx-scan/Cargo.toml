@@ -1,0 +1,32 @@
+[package]
+name = "ruvector-pdx-scan"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+authors = ["Ruvector Team"]
+license = "MIT"
+description = "PDX: Partitioned-Dimensions-across-Vectors layout for SIMD-friendly, prunable brute-force and IVF vector scans (Kuffo et al., SIGMOD 2024)"
+readme = "README.md"
+keywords = ["vector-search", "ann", "simd", "pdx", "quantization"]
+categories = ["algorithms", "data-structures"]
+
+# Detached workspace: does not participate in the top-level workspace build.
+[workspace]
+
+[[bin]]
+name = "pdx-bench"
+path = "src/bin/pdx_bench.rs"
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+
+[lints.rust]
+dead_code = "allow"
+unused_variables = "allow"
