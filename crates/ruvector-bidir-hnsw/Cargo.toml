@@ -1,0 +1,34 @@
+[package]
+name = "ruvector-bidir-hnsw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bidirectional (reverse-neighbor densified) HNSW graph search for ruvector"
+readme = "README.md"
+keywords = ["vector-search", "ann", "hnsw", "graph", "reranking"]
+categories = ["algorithms", "data-structures"]
+
+[dependencies]
+rand       = { workspace = true }
+rand_distr = { workspace = true }
+thiserror  = { workspace = true }
+
+[[bin]]
+name = "bench"
+path = "src/main.rs"
+
+[lib]
+name = "ruvector_bidir_hnsw"
+crate-type = ["rlib"]
+
+[lints.rust]
+dead_code        = "allow"
+unused_variables = "allow"
+unused_imports   = "allow"
+
+[dev-dependencies]
+rand       = { workspace = true }
+rand_distr = { workspace = true }

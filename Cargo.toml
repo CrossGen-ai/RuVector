@@ -93,6 +93,7 @@ members = [
     "crates/ruvector-staged-workspace",
     "crates/ruvector-retrieval-receipt",
     "crates/ruvector-gnn-rerank",
+    "crates/ruvector-bidir-hnsw",
     "crates/ruvector-gnn-node",
     "crates/ruvector-gnn-wasm",
     "crates/ruvector-attention",
