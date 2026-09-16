@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-aq-beam"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Additive Quantization with beam-search encoding for high-recall compressed ANN search"
+
+[[bin]]
+name = "aq-beam-demo"
+path = "src/bin/demo.rs"
+
+[[bench]]
+name = "aq_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
