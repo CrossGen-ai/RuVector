@@ -342,6 +342,8 @@ members = [
     "crates/ruvector-bet4-ivf-bench",
     "crates/ruvector-hnsw-repair",
     "crates/ruvector-temporal-tensor-wasm",
+    # Bit-sliced (bit-transposed) Hamming top-K over binary embeddings (ADR-347)
+    "crates/ruvector-bit-sliced-hamming",
     # NOTE: ruvector-agent-memory is listed once, mid-list next to
     # ruvector-proof-gate (TARL ledger, PR #858); the duplicate entry the
     # #859 sweep added here as a merge hedge was dropped on merge.

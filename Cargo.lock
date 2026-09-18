@@ -8851,6 +8851,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-bit-sliced-hamming"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+]
+
+[[package]]
 name = "ruvector-bounded-rag"
 version = "2.3.0"
 dependencies = [
