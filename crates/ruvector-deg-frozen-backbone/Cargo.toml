@@ -1,0 +1,20 @@
+[package]
+name = "ruvector-deg-frozen-backbone"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Dynamic Exploration Graph with frozen Delaunay-approximation backbone (nightly research PoC)"
+
+[dependencies]
+
+[dev-dependencies]
+
+[[bin]]
+name = "deg-bench"
+path = "src/bin/bench.rs"
+
+[[example]]
+name = "quickstart"
+path = "examples/quickstart.rs"
