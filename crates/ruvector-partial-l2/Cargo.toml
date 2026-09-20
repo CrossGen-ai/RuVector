@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-partial-l2"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Partial L2 distance with early abandonment for ANN reranking and threshold-gated scan"
+
+[dependencies]
+rand = { workspace = true }
+
+[dev-dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[[example]]
+name = "smoke"
+path = "examples/smoke.rs"

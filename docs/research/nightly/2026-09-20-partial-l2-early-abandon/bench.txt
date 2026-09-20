@@ -1,0 +1,23 @@
+=== ruvector-partial-l2 benchmark ===
+dim=768 n_vectors=100000 n_queries=32 k=10  (release, single-thread)
+generating vectors...
+
+--- single-pair kernel throughput (dim=768, 1e6 reps) ---
+  l2_full            :  234.495 ns/call  (9.83 GFLOPS)  sink=513969280
+  l2_ea< 32> (worst):  112.910 ns/call  sink=513969280
+  l2_ea< 64> (worst):  223.510 ns/call  sink=513969280
+  l2_ea<128> (worst):  212.827 ns/call  sink=513969280
+
+--- rerank scenario (32 queries × 100000 candidates) ---
+  baseline (full L2)         : total=  0.752s  median/query= 23.320ms
+  early-abandon dyn stride= 32  : total=  0.815s  median/query= 25.174ms  abandoned= 99.9%  speedup=0.92x  recall=1.000
+  early-abandon dyn stride= 64  : total=  1.400s  median/query= 44.829ms  abandoned= 99.9%  speedup=0.54x  recall=1.000
+  early-abandon dyn stride=128  : total=  0.809s  median/query= 25.183ms  abandoned= 99.9%  speedup=0.93x  recall=1.000
+  --- const-generic (recommended production path) ---
+  early-abandon const stride= 32: total=  0.379s  median/query= 11.844ms  speedup=1.98x  recall=1.000
+  early-abandon const stride= 64: total=  0.672s  median/query= 21.013ms  speedup=1.12x  recall=1.000
+  early-abandon const stride=128: total=  0.686s  median/query= 21.424ms  speedup=1.10x  recall=1.000
+
+(recall parity is exact by construction — abandonment is triggered only
+when the running partial squared L2 already exceeds the current top-k
+worst distance.)
