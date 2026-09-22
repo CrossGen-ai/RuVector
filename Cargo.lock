@@ -10386,6 +10386,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-opq-rotation"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-perception"
 version = "2.3.0"
 dependencies = [

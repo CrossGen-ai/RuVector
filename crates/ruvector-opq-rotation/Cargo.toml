@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-opq-rotation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Optimized Product Quantization (OPQ) with learned block-Householder rotation for improved ADC recall on skewed vector distributions"
+readme = "README.md"
+keywords = ["vector-search", "ann", "product-quantization", "opq", "rotation"]
+categories = ["algorithms", "data-structures", "science"]
+
+[[bin]]
+name = "opq-benchmark"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
