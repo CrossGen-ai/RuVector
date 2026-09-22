@@ -1,0 +1,26 @@
+[package]
+name = "ruvector-norm-bucket-ivf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Norm-sorted cluster buckets: Cauchy-Schwarz pruning for IVF vector search"
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rayon = { workspace = true }
+
+[dev-dependencies]
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "prune_bench"
+path = "benches/prune_bench.rs"
+harness = false
+
+[lib]
+path = "src/lib.rs"

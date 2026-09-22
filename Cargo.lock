@@ -10386,6 +10386,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-norm-bucket-ivf"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_distr 0.4.3",
+ "rayon",
+]
+
+[[package]]
 name = "ruvector-perception"
 version = "2.3.0"
 dependencies = [
