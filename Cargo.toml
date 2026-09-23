@@ -343,6 +343,8 @@ members = [
     "crates/ruvector-streaming-qng",
     # Entropy-adaptive ANN beam search: live Shannon entropy gates beam width (ADR-303)
     "crates/ruvector-entropy-ann",
+    # PQ FastScan with LUT16 4-bit packed codes and portable SIMD table lookup (ADR-348)
+    "crates/ruvector-pq-fastscan-lut16",
     # PIR #859 workspace-membership sweep: these crates were dangling —
     # present under crates/ but neither in members nor exclude, so their
     # tests and lints never ran in CI.

@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-pq-fastscan-lut16"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PQ FastScan with 4-bit LUT16 packed codes and portable SIMD table lookup for ADC vector search"
+readme = "README.md"
+keywords = ["vector-search", "ann", "product-quantization", "fastscan", "simd"]
+categories = ["algorithms", "data-structures", "science"]
+
+[[bin]]
+name = "fastscan-benchmark"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
