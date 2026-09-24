@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-ivf-hnsw-coarse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "HNSW coarse quantizer for IVF: O(log C) nprobe selection over centroid list"
+readme = "README.md"
+keywords = ["vector-search", "ann", "ivf", "hnsw", "coarse-quantizer"]
+categories = ["algorithms", "data-structures", "science"]
+
+[[bin]]
+name = "ivf-hnsw-coarse-bench"
+path = "src/main.rs"
+
+[dependencies]
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

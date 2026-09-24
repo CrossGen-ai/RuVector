@@ -10054,6 +10054,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-ivf-hnsw-coarse"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-kalshi"
 version = "0.1.0"
 dependencies = [
