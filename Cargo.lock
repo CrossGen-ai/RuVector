@@ -9658,6 +9658,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-ef-neighbors"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+]
+
+[[package]]
 name = "ruvector-embed-core"
 version = "2.3.0"
 dependencies = [

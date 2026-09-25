@@ -1,0 +1,28 @@
+[package]
+name = "ruvector-ef-neighbors"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Elias-Fano compressed HNSW neighbor lists — monotone-integer coding for adjacency memory savings with random access"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bench.rs"
+
+[dependencies]
+rand = { workspace = true }
+
+[lints.rust]
+dead_code = "allow"
+unused_variables = "allow"
+unused_imports = "allow"
+
+[lints.clippy]
+pedantic = { level = "allow", priority = -2 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
