@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-hnsw-batch-shared-frontier"
+version = "0.1.0"
+edition = "2021"
+description = "Batched HNSW search with shared candidate frontier for correlated query batches"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[[example]]
+name = "run_bench"
+path = "examples/run_bench.rs"
+
+[[bin]]
+name = "bsf-bench"
+path = "src/bin/bench.rs"

@@ -1,0 +1,88 @@
+  * `bin` target `bench_runner`
+  * `bench` target `attention_benchmarks`
+# ruvector-hnsw-batch-shared-frontier bench
+# dim=128 n=5000 k=10 ef=64
+=== BenchReport n=5000 dim=128 q=4 k=10 ef=64 corr=0.60 ===
+backend                    ms      loads       hits   recall
+independent              0.19       3096          0   0.9750
+batched-kernel           0.31       3093          0   0.9750
+shared-frontier          0.17        889       2204   0.9750
+shared-frontier vector-load savings vs independent: 71.3%
+shared-frontier cache footprint estimate: 80000 bytes (0.08 MiB)
+=== BenchReport n=5000 dim=128 q=4 k=10 ef=64 corr=0.85 ===
+backend                    ms      loads       hits   recall
+independent              0.17       3115          0   0.9750
+batched-kernel           0.32       3112          0   0.9750
+shared-frontier          0.15        873       2239   0.9750
+shared-frontier vector-load savings vs independent: 72.0%
+shared-frontier cache footprint estimate: 80000 bytes (0.08 MiB)
+=== BenchReport n=5000 dim=128 q=4 k=10 ef=64 corr=0.98 ===
+backend                    ms      loads       hits   recall
+independent              0.15       3101          0   1.0000
+batched-kernel           0.31       3098          0   1.0000
+shared-frontier          0.14        808       2290   1.0000
+shared-frontier vector-load savings vs independent: 73.9%
+shared-frontier cache footprint estimate: 80000 bytes (0.08 MiB)
+=== BenchReport n=5000 dim=128 q=8 k=10 ef=64 corr=0.60 ===
+backend                    ms      loads       hits   recall
+independent              0.31       6186          0   0.9750
+batched-kernel           1.12       6179          0   0.9750
+shared-frontier          0.31        900       5279   0.9750
+shared-frontier vector-load savings vs independent: 85.5%
+shared-frontier cache footprint estimate: 160000 bytes (0.15 MiB)
+=== BenchReport n=5000 dim=128 q=8 k=10 ef=64 corr=0.85 ===
+backend                    ms      loads       hits   recall
+independent              0.32       6196          0   0.9875
+batched-kernel           1.06       6189          0   0.9875
+shared-frontier          0.28        883       5306   0.9875
+shared-frontier vector-load savings vs independent: 85.7%
+shared-frontier cache footprint estimate: 160000 bytes (0.15 MiB)
+=== BenchReport n=5000 dim=128 q=8 k=10 ef=64 corr=0.98 ===
+backend                    ms      loads       hits   recall
+independent              0.34       6204          0   1.0000
+batched-kernel           1.10       6197          0   1.0000
+shared-frontier          0.25        824       5373   1.0000
+shared-frontier vector-load savings vs independent: 86.7%
+shared-frontier cache footprint estimate: 160000 bytes (0.15 MiB)
+=== BenchReport n=5000 dim=128 q=16 k=10 ef=64 corr=0.60 ===
+backend                    ms      loads       hits   recall
+independent              0.60      12432          0   0.9875
+batched-kernel           3.94      12417          0   0.9875
+shared-frontier          0.54        907      11510   0.9875
+shared-frontier vector-load savings vs independent: 92.7%
+shared-frontier cache footprint estimate: 320000 bytes (0.31 MiB)
+=== BenchReport n=5000 dim=128 q=16 k=10 ef=64 corr=0.85 ===
+backend                    ms      loads       hits   recall
+independent              0.61      12494          0   0.9812
+batched-kernel           4.07      12479          0   0.9812
+shared-frontier          0.58        889      11590   0.9812
+shared-frontier vector-load savings vs independent: 92.9%
+shared-frontier cache footprint estimate: 320000 bytes (0.31 MiB)
+=== BenchReport n=5000 dim=128 q=16 k=10 ef=64 corr=0.98 ===
+backend                    ms      loads       hits   recall
+independent              0.59      12436          0   1.0000
+batched-kernel           4.10      12421          0   1.0000
+shared-frontier          0.51        828      11593   1.0000
+shared-frontier vector-load savings vs independent: 93.3%
+shared-frontier cache footprint estimate: 320000 bytes (0.31 MiB)
+=== BenchReport n=5000 dim=128 q=32 k=10 ef=64 corr=0.60 ===
+backend                    ms      loads       hits   recall
+independent              1.22      24801          0   0.9844
+batched-kernel          15.75      24770          0   0.9844
+shared-frontier          1.14        907      23863   0.9844
+shared-frontier vector-load savings vs independent: 96.3%
+shared-frontier cache footprint estimate: 640000 bytes (0.61 MiB)
+=== BenchReport n=5000 dim=128 q=32 k=10 ef=64 corr=0.85 ===
+backend                    ms      loads       hits   recall
+independent              1.22      24928          0   0.9875
+batched-kernel          15.93      24897          0   0.9875
+shared-frontier          1.10        900      23997   0.9875
+shared-frontier vector-load savings vs independent: 96.4%
+shared-frontier cache footprint estimate: 640000 bytes (0.61 MiB)
+=== BenchReport n=5000 dim=128 q=32 k=10 ef=64 corr=0.98 ===
+backend                    ms      loads       hits   recall
+independent              1.12      24828          0   1.0000
+batched-kernel          15.73      24797          0   1.0000
+shared-frontier          1.01        835      23962   1.0000
+shared-frontier vector-load savings vs independent: 96.6%
+shared-frontier cache footprint estimate: 640000 bytes (0.61 MiB)
