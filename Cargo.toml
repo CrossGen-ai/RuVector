@@ -56,6 +56,7 @@ members = [
     "crates/ruvector-rabitq-wasm",
     "crates/ruvector-turbovec",
     "crates/ruvector-turboquant",
+    "crates/ruvector-crackivf-adaptive",
     "crates/ruvector-rulake",
     "crates/ruvector-core",
     "crates/ruvector-context",

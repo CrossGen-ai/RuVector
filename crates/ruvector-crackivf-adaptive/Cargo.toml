@@ -1,0 +1,26 @@
+[package]
+name = "ruvector-crackivf-adaptive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Adaptive IVF cell splitting driven by online query density (CrackIVF-inspired database cracking for vector search)."
+
+[dependencies]
+rand = { workspace = true }
+
+[dev-dependencies]
+
+[[example]]
+name = "crack_demo"
+path = "examples/crack_demo.rs"
+
+[[bench]]
+name = "recall_qps"
+path = "benches/recall_qps.rs"
+harness = false
+
+[lints]
+workspace = true

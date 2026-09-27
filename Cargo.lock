@@ -9400,6 +9400,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-crackivf-adaptive"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+]
+
+[[package]]
 name = "ruvector-crv"
 version = "0.1.1"
 dependencies = [
