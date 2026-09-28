@@ -8873,6 +8873,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-abpq"
+version = "2.3.0"
+dependencies = [
+ "criterion 0.5.1",
+ "rand 0.8.6",
+ "rand_distr 0.4.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-acorn"
 version = "2.3.0"
 dependencies = [
