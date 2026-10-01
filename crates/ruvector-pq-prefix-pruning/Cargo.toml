@@ -1,0 +1,21 @@
+[package]
+name = "ruvector-pq-prefix-pruning"
+version = "0.1.0"
+edition = "2021"
+description = "Partial-sum prefix pruning for 4-bit FastScan ADC with variance-ordered PQ segments"
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[dependencies]
+rand = { version = "0.8", features = ["small_rng"] }
+rand_chacha = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
