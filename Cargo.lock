@@ -9092,6 +9092,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-batched-ivf"
+version = "2.3.0"
+dependencies = [
+ "criterion 0.5.1",
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "serde",
+]
+
+[[package]]
 name = "ruvector-bench"
 version = "2.3.0"
 dependencies = [

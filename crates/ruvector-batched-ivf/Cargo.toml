@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-batched-ivf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Multi-query batched IVF scanning with shared posting-list traversal for ruvector"
+
+[dependencies]
+rayon = { workspace = true }
+rand = { workspace = true }
+rand_chacha = "0.3"
+serde = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "batched_scan"
+harness = false
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
