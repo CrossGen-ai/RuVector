@@ -1,0 +1,21 @@
+[package]
+name = "ruvector-hnsw-freq-reorder"
+version = "0.1.0"
+edition = "2021"
+description = "Query-adaptive frequency-reordered HNSW neighbor lists for cache-friendly ANN traversal"
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"

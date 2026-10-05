@@ -51,6 +51,7 @@ exclude = ["external/ruqu", "external/rvdna", "examples/OSpipe", "examples/rvf",
     # unify with this workspace. The pure cores it wraps are members below.
     "edge", "edge/*"]
 members = [
+    "crates/ruvector-online-centroid-refresh",
     # ruvector edge pure-Rust cores (ADR-351): resource-server auth, tenancy,
     # and the edge OAuth authorization server. wasm32-unknown-unknown clean.
     "crates/ruvector-edge-auth",
