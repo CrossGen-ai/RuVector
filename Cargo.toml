@@ -77,6 +77,7 @@ members = [
     "crates/ruvector-node",
     "crates/ruvector-wasm",
     "crates/ruvector-cli",
+    "crates/ruvector-lsh-seeded-hnsw-entry",
     "crates/ruvector-bench",
     "crates/ruvector-metrics",
     "crates/ruvector-filter",

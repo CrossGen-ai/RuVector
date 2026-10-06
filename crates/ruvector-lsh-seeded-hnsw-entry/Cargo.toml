@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-lsh-seeded-hnsw-entry"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "LSH-seeded entry-point selection for small-world ANN graphs; cuts hops and distance computations vs fixed-enterpoint search."
+
+[lib]
+path = "src/lib.rs"
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "entry"
+path = "benches/entry.rs"
+harness = false
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
