@@ -1,0 +1,25 @@
+[package]
+name = "ruvector-lloyd-max-sq4"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "4-bit scalar quantization for ANN with Lloyd-Max non-uniform bins, asymmetric distance tables."
+
+[lib]
+path = "src/lib.rs"
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "sq4"
+path = "benches/sq4.rs"
+harness = false
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
+
+[dev-dependencies]
+
