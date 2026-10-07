@@ -1,0 +1,12 @@
+[package]
+name = "ruvector-ivf-pfor-postings"
+version = "0.1.0"
+edition = "2021"
+description = "Delta + Frame-of-Reference block compression for IVF posting lists"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[[example]]
+name = "measure"
+path = "examples/measure.rs"

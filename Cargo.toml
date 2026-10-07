@@ -53,6 +53,7 @@ exclude = ["external/ruqu", "external/rvdna", "examples/OSpipe", "examples/rvf",
 members = [
     # ruvector edge pure-Rust cores (ADR-351): resource-server auth, tenancy,
     # and the edge OAuth authorization server. wasm32-unknown-unknown clean.
+    "crates/ruvector-ivf-pfor-postings",
     "crates/ruvector-edge-auth",
     "crates/ruvector-edge-tenancy",
     "crates/ruvector-edge-authz",
