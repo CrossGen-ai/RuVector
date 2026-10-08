@@ -1,0 +1,20 @@
+[workspace]
+
+[package]
+name = "ruvector-dyn-rerank-budget"
+version = "0.1.0"
+edition = "2021"
+description = "Query-adaptive rerank-budget allocator for IVF-PQ vector search"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+
+[[bin]]
+name = "drb-bench"
+path = "src/bin/bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
