@@ -10011,6 +10011,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-extended-rabitq"
+version = "2.3.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+ "rand_distr 0.4.3",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ruvector-filter"
 version = "2.3.0"
 dependencies = [

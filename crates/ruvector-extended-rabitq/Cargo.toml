@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-extended-rabitq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Extended RaBitQ (eRaBitQ): B-bit rotation-based vector quantization with asymmetric distance estimator and provable error bounds"
+
+[[bin]]
+name = "erabitq-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "erabitq_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rand_chacha = "0.3"
+serde = { workspace = true }
+thiserror = { workspace = true }
