@@ -1,0 +1,22 @@
+[package]
+name = "ruvector-rabitq-ensemble"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Rotation-Ensemble RaBitQ: K independent 1-bit codes under K rotations, averaged at query time — bit-budget-matched counterpart to multibit RaBitQ"
+
+[[bin]]
+name = "rabitq-ensemble-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "ensemble_bench"
+harness = false
+
+[dependencies]
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
