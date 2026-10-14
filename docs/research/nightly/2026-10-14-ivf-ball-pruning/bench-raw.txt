@@ -1,0 +1,92 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/cap/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/proof/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/nucleus/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/crates/shell/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/tests/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/benches/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvix/examples/cognitive_demo/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-consciousness-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-decompiler-wasm/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-entropy-ann/Cargo.toml
+workspace: /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml
+warning: crates/ruvector-attention/Cargo.toml: file `/Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-attention/benches/attention_benchmarks.rs` found to be present in multiple build targets:
+  * `bin` target `bench_runner`
+  * `bench` target `attention_benchmarks`
+warning: `ruvector-attention` (manifest) generated 1 warning
+   Compiling ruvector-ivf-ball-pruning v0.1.0 (/Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-ivf-ball-pruning)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 12.79s
+     Running unittests src/lib.rs (target/release/deps/ruvector_ivf_ball_pruning-17b2eb6975b1645c)
+
+running 3 tests
+test tests::ball_prune_matches_baseline ... ignored
+test tests::ball_prune_reduces_touches ... ignored
+test tests::partial_abandon_matches_baseline_topk ... ignored
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running benches/ball_bench.rs (target/release/deps/ball_bench-e7556353ae122620)
+ruvector-ivf-ball-pruning :: benchmark (GMM synthetic data)
+hardware: Apple M4 Max, 16 cores
+
+--- n=20000 dim=64 modes=32 clusters=128 k=10 nq=200 mean_cluster=156.2 mean_rmax=1.6710 gt_time=0.22s
+baseline   nprobe=  8 rec@10=0.9990 qps=  4255.1 mean_ms=0.235 probes_scanned=    8 touched=   1388 full_d=   1388
+partial    nprobe=  8 rec@10=0.9990 qps=  3398.9 mean_ms=0.294 probes_scanned=    8 touched=   1388 full_d=     48
+ball-prune nprobe=  8 rec@10=0.9990 qps=  5117.3 mean_ms=0.195 probes_scanned=    6 touched=   1222 full_d=     48
+baseline   nprobe= 16 rec@10=1.0000 qps=  3936.3 mean_ms=0.254 probes_scanned=   16 touched=   2531 full_d=   2531
+partial    nprobe= 16 rec@10=1.0000 qps=  4040.9 mean_ms=0.247 probes_scanned=   16 touched=   2531 full_d=     48
+ball-prune nprobe= 16 rec@10=1.0000 qps=  5715.5 mean_ms=0.175 probes_scanned=   11 touched=   1914 full_d=     48
+baseline   nprobe= 32 rec@10=1.0000 qps=  4079.3 mean_ms=0.245 probes_scanned=   32 touched=   4982 full_d=   4982
+partial    nprobe= 32 rec@10=1.0000 qps=  1790.9 mean_ms=0.558 probes_scanned=   32 touched=   4982 full_d=     48
+ball-prune nprobe= 32 rec@10=1.0000 qps=  3165.2 mean_ms=0.316 probes_scanned=   13 touched=   2320 full_d=     48
+baseline   nprobe= 64 rec@10=1.0000 qps=  1288.9 mean_ms=0.776 probes_scanned=   64 touched=   9726 full_d=   9726
+partial    nprobe= 64 rec@10=1.0000 qps=   555.7 mean_ms=1.799 probes_scanned=   64 touched=   9726 full_d=     48
+ball-prune nprobe= 64 rec@10=1.0000 qps=  4685.6 mean_ms=0.213 probes_scanned=   14 touched=   2323 full_d=     48
+
+--- n=50000 dim=96 modes=64 clusters=256 k=10 nq=200 mean_cluster=195.3 mean_rmax=1.9684 gt_time=0.51s
+baseline   nprobe=  8 rec@10=0.9945 qps=  7019.8 mean_ms=0.142 probes_scanned=    8 touched=   1498 full_d=   1498
+partial    nprobe=  8 rec@10=0.9945 qps=  3815.8 mean_ms=0.262 probes_scanned=    8 touched=   1498 full_d=     48
+ball-prune nprobe=  8 rec@10=0.9945 qps=  4512.4 mean_ms=0.222 probes_scanned=    6 touched=   1383 full_d=     48
+baseline   nprobe= 16 rec@10=1.0000 qps=  3766.2 mean_ms=0.266 probes_scanned=   16 touched=   3048 full_d=   3048
+partial    nprobe= 16 rec@10=1.0000 qps=  2052.2 mean_ms=0.487 probes_scanned=   16 touched=   3048 full_d=     48
+ball-prune nprobe= 16 rec@10=1.0000 qps=  2746.7 mean_ms=0.364 probes_scanned=   11 touched=   2302 full_d=     48
+baseline   nprobe= 32 rec@10=1.0000 qps=  2231.6 mean_ms=0.448 probes_scanned=   32 touched=   6271 full_d=   6271
+partial    nprobe= 32 rec@10=1.0000 qps=   846.9 mean_ms=1.181 probes_scanned=   32 touched=   6271 full_d=     48
+ball-prune nprobe= 32 rec@10=1.0000 qps=  2164.9 mean_ms=0.462 probes_scanned=   15 touched=   3217 full_d=     48
+baseline   nprobe= 64 rec@10=1.0000 qps=   839.8 mean_ms=1.191 probes_scanned=   64 touched=  12565 full_d=  12565
+partial    nprobe= 64 rec@10=1.0000 qps=   506.6 mean_ms=1.974 probes_scanned=   64 touched=  12565 full_d=     48
+ball-prune nprobe= 64 rec@10=1.0000 qps=   990.4 mean_ms=1.010 probes_scanned=   16 touched=   3437 full_d=     48
+
+--- n=100000 dim=128 modes=128 clusters=512 k=10 nq=100 mean_cluster=195.3 mean_rmax=2.2747 gt_time=0.45s
+baseline   nprobe=  8 rec@10=0.9910 qps=  5555.0 mean_ms=0.180 probes_scanned=    8 touched=   1605 full_d=   1605
+partial    nprobe=  8 rec@10=0.9910 qps=  3516.3 mean_ms=0.284 probes_scanned=    8 touched=   1605 full_d=     50
+ball-prune nprobe=  8 rec@10=0.9910 qps=  3256.2 mean_ms=0.307 probes_scanned=    7 touched=   1486 full_d=     50
+baseline   nprobe= 16 rec@10=1.0000 qps=  2567.2 mean_ms=0.390 probes_scanned=   16 touched=   3169 full_d=   3169
+partial    nprobe= 16 rec@10=1.0000 qps=  1337.1 mean_ms=0.748 probes_scanned=   16 touched=   3169 full_d=     50
+ball-prune nprobe= 16 rec@10=1.0000 qps=  1548.8 mean_ms=0.646 probes_scanned=   13 touched=   2569 full_d=     50
+baseline   nprobe= 32 rec@10=1.0000 qps=   962.8 mean_ms=1.039 probes_scanned=   32 touched=   6121 full_d=   6121
+partial    nprobe= 32 rec@10=1.0000 qps=   296.4 mean_ms=3.374 probes_scanned=   32 touched=   6121 full_d=     50
+ball-prune nprobe= 32 rec@10=1.0000 qps=   253.6 mean_ms=3.944 probes_scanned=   19 touched=   3790 full_d=     50
+baseline   nprobe= 64 rec@10=1.0000 qps=   317.8 mean_ms=3.147 probes_scanned=   64 touched=  12344 full_d=  12344
+partial    nprobe= 64 rec@10=1.0000 qps=   248.0 mean_ms=4.032 probes_scanned=   64 touched=  12344 full_d=     50
+ball-prune nprobe= 64 rec@10=1.0000 qps=   555.4 mean_ms=1.800 probes_scanned=   22 touched=   4366 full_d=     50
+
+[exited with code 0]
