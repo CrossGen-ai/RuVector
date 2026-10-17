@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-adsampling"
+version = "0.1.0"
+edition = "2021"
+description = "ADSampling: random-projection + hypothesis-test early termination of exact L2 distance (SIGMOD 2023)."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["plotters", "cargo_bench_support"] }
+
+[[bench]]
+name = "distance_prune"
+harness = false
+
+[[example]]
+name = "ivf_scan"
+path = "examples/ivf_scan.rs"
+
+[lints]
+workspace = true
