@@ -109,11 +109,12 @@ jobs:
         run: |
           mkdir -p gnn-artifacts/${{ matrix.settings.platform }}
 
-          # Find the built .node file
-          NODE_FILE=$(find crates/ruvector-gnn-node -name "ruvector-gnn.*.node" -type f | head -1)
+          # napi --platform writes this exact matrix target at the crate root.
+          # Never select a checked-in npm/* binary through a recursive search.
+          NODE_FILE="crates/ruvector-gnn-node/ruvector-gnn.${{ matrix.settings.platform }}.node"
 
-          if [ -z "$NODE_FILE" ]; then
-            echo "ERROR: No .node file found"
+          if [ ! -f "$NODE_FILE" ]; then
+            echo "ERROR: Expected fresh matrix artifact $NODE_FILE"
             find crates/ruvector-gnn-node -name "*.node" -type f
             exit 1
           fi
