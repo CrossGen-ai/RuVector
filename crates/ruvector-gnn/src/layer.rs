@@ -103,6 +103,9 @@ impl MultiHeadAttention {
     /// # Errors
     /// Returns `GnnError::LayerConfig` if `embed_dim` is not divisible by `num_heads`.
     pub fn new(embed_dim: usize, num_heads: usize) -> Result<Self, GnnError> {
+        if num_heads == 0 {
+            return Err(GnnError::layer_config("Number of heads must be positive"));
+        }
         if embed_dim % num_heads != 0 {
             return Err(GnnError::layer_config(format!(
                 "Embedding dimension ({}) must be divisible by number of heads ({})",
@@ -372,6 +375,16 @@ impl RuvectorLayer {
         })
     }
 
+    /// Dimension expected for node and neighbor embeddings.
+    pub fn input_dim(&self) -> usize {
+        self.w_msg.weights.shape()[1]
+    }
+
+    /// Dimension produced by this layer.
+    pub fn output_dim(&self) -> usize {
+        self.w_msg.output_dim()
+    }
+
     /// Forward pass through the GNN layer
     ///
     /// # Arguments
@@ -501,6 +514,12 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("divisible"));
+    }
+
+    #[test]
+    fn test_multihead_attention_rejects_zero_heads() {
+        assert!(MultiHeadAttention::new(8, 0).is_err());
+        assert!(RuvectorLayer::new(2, 2, 0, 0.0).is_err());
     }
 
     #[test]
