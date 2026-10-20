@@ -121,6 +121,25 @@ jobs:
           echo "Found: $NODE_FILE"
           cp -v "$NODE_FILE" "gnn-artifacts/${{ matrix.settings.platform }}/"
 
+      - name: Test native binding on matching host
+        shell: bash
+        env:
+          GNN_PLATFORM: ${{ matrix.settings.platform }}
+        run: |
+          NODE_HOST=$(node -p 'process.platform + "-" + process.arch')
+          case "$GNN_PLATFORM:$NODE_HOST" in
+            linux-x64-gnu:linux-x64|darwin-x64:darwin-x64|darwin-arm64:darwin-arm64|win32-x64-msvc:win32-x64)
+              ;;
+            *)
+              echo "Cross-built artifact $GNN_PLATFORM cannot run on $NODE_HOST; runtime tests require a matching host."
+              exit 0
+              ;;
+          esac
+          NODE_FILE=$(find "gnn-artifacts/$GNN_PLATFORM" -maxdepth 1 -name '*.node' -type f | head -1)
+          test -n "$NODE_FILE"
+          ulimit -c 0 || true
+          RUVECTOR_GNN_BINDING="$(pwd)/$NODE_FILE" node --test crates/ruvector-gnn-node/test/*.test.js
+
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
