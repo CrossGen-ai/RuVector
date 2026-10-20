@@ -371,6 +371,9 @@ members = [
     "crates/ruvector-bet4-ivf-bench",
     "crates/ruvector-hnsw-repair",
     "crates/ruvector-temporal-tensor-wasm",
+    # Hamming-weight pre-bucketing for binary ANN: popcount-indexed buckets
+    # with |pop(x)-pop(q)| triangle lower-bound pruning (ADR-356)
+    "crates/ruvector-hamming-weight-prebucket",
     # NOTE: ruvector-agent-memory is listed once, mid-list next to
     # ruvector-proof-gate (TARL ledger, PR #858); the duplicate entry the
     # #859 sweep added here as a merge hedge was dropped on merge.
