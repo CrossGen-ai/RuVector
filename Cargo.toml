@@ -371,6 +371,9 @@ members = [
     "crates/ruvector-bet4-ivf-bench",
     "crates/ruvector-hnsw-repair",
     "crates/ruvector-temporal-tensor-wasm",
+    # IVF probe-loop early termination via per-cell radius + triangle
+    # lower bound ||q-p|| >= ||q-mu_c|| - r_c (ADR-357)
+    "crates/ruvector-ivf-radius-et",
     # NOTE: ruvector-agent-memory is listed once, mid-list next to
     # ruvector-proof-gate (TARL ledger, PR #858); the duplicate entry the
     # #859 sweep added here as a merge hedge was dropped on merge.

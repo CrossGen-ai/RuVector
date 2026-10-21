@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-ivf-radius-et"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "IVF probe-loop early termination via per-cell radius + triangle lower bound: ||q-p|| >= ||q-c|| - r_c lets probes stop as soon as the next cell cannot beat the kth-best"
+readme = "README.md"
+keywords = ["vector-search", "ann", "ivf", "early-termination", "pruning"]
+categories = ["algorithms", "data-structures"]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[dependencies]
+
+[lints.rust]
+dead_code = "allow"
+unused_variables = "allow"

@@ -10420,6 +10420,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-ivf-radius-et"
+version = "2.3.0"
+
+[[package]]
 name = "ruvector-kalshi"
 version = "0.1.0"
 dependencies = [
