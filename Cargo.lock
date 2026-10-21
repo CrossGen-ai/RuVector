@@ -11770,6 +11770,7 @@ dependencies = [
  "ruvector-gnn",
  "ruvector-graph",
  "ruvector-sona 0.2.1",
+ "rustc_version",
  "serde",
  "serde_json",
  "sha2 0.10.9",
