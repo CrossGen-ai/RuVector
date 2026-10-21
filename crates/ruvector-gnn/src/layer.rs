@@ -106,7 +106,7 @@ impl MultiHeadAttention {
         if num_heads == 0 {
             return Err(GnnError::layer_config("Number of heads must be positive"));
         }
-        if embed_dim % num_heads != 0 {
+        if !embed_dim.is_multiple_of(num_heads) {
             return Err(GnnError::layer_config(format!(
                 "Embedding dimension ({}) must be divisible by number of heads ({})",
                 embed_dim, num_heads
@@ -378,7 +378,7 @@ impl RuvectorLayer {
     }
 
     fn validate_dimensions(input: usize, hidden: usize, heads: usize) -> Result<(), GnnError> {
-        if hidden == 0 || heads == 0 || hidden % heads != 0 {
+        if hidden == 0 || heads == 0 || !hidden.is_multiple_of(heads) {
             return Err(GnnError::layer_config(
                 "Hidden dimension and heads must be positive, and hidden dimension divisible by heads",
             ));
