@@ -343,7 +343,6 @@ fn parse_npy_file(path: &str) -> Result<Vec<VectorEntry>> {
     Ok(entries)
 }
 
-
 #[cfg(test)]
 mod npy_feature_tests {
     use super::parse_npy_file;
@@ -352,15 +351,21 @@ mod npy_feature_tests {
 
     fn path(label: &str) -> std::path::PathBuf {
         let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        std::env::temp_dir().join(format!("ruvector-npy-{label}-{}-{nonce}.npy", std::process::id()))
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "ruvector-npy-{label}-{}-{nonce}.npy",
+            std::process::id()
+        ))
     }
 
     #[test]
     fn loads_npy_vectors_without_npz_feature() {
         let path = path("roundtrip");
         array![[1.25f32, 2.5], [3.75, -4.0]]
-            .write_npy(std::fs::File::create(&path).unwrap()).unwrap();
+            .write_npy(std::fs::File::create(&path).unwrap())
+            .unwrap();
         let result = parse_npy_file(path.to_str().unwrap());
         std::fs::remove_file(&path).unwrap();
         let entries = result.unwrap();
