@@ -115,12 +115,11 @@ impl RuvectorLayer {
     /// Deserialize the layer from JSON
     #[napi(factory)]
     pub fn from_json(json: String) -> Result<Self> {
-        let inner: RustRuvectorLayer = serde_json::from_str(&json).map_err(|e| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Deserialization error: {}", e),
-            )
-        })?;
+        let inner: RustRuvectorLayer = serde_json::from_str(&json)
+            .map_err(|e| Error::new(Status::InvalidArg, format!("Deserialization error: {}", e)))?;
+        inner
+            .validate()
+            .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))?;
         Ok(Self { inner })
     }
 }
@@ -381,12 +380,16 @@ pub fn hierarchical_forward(
     let gnn_layers: Vec<RustRuvectorLayer> = gnn_layers_json
         .iter()
         .map(|json| {
-            serde_json::from_str(json).map_err(|e| {
+            let layer: RustRuvectorLayer = serde_json::from_str(json).map_err(|e| {
                 Error::new(
-                    Status::GenericFailure,
+                    Status::InvalidArg,
                     format!("Layer deserialization error: {}", e),
                 )
-            })
+            })?;
+            layer
+                .validate()
+                .map_err(|e| Error::new(Status::InvalidArg, e.to_string()))?;
+            Ok(layer)
         })
         .collect::<Result<Vec<_>>>()?;
 
