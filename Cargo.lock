@@ -11127,6 +11127,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-soar-ivf"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
 name = "ruvector-solver"
 version = "2.3.0"
 dependencies = [

@@ -51,6 +51,9 @@ exclude = ["external/ruqu", "external/rvdna", "examples/OSpipe", "examples/rvf",
     # unify with this workspace. The pure cores it wraps are members below.
     "edge", "edge/*"]
 members = [
+    # ruvector-soar-ivf (ADR-353, nightly 2026-10-22): SOAR orthogonality-aware
+    # spilled IVF assignment (Sun et al. NeurIPS 2024).
+    "crates/ruvector-soar-ivf",
     # ruvector Python SDK (ADR-352): PyO3 + maturin bindings. Salvaged from
     # the stale feature/python-sdk-m1 branch (M1 RaBitQ scope) and extended.
     "crates/ruvector-py",
