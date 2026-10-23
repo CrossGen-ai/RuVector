@@ -1,0 +1,24 @@
+[package]
+name = "ruvector-hadamard-sq"
+version = "0.1.0"
+edition = "2021"
+description = "Hadamard-rotated scalar quantization (SQ4/SQ8) for ANN compression"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "hsq"
+path = "benches/hsq.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"

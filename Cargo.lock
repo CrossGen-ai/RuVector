@@ -10342,6 +10342,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-hadamard-sq"
+version = "0.1.0"
+
+[[package]]
 name = "ruvector-hailo"
 version = "0.1.0"
 dependencies = [

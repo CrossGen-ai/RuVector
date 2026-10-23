@@ -72,6 +72,7 @@ members = [
     "crates/ruvector-coherence-hnsw",
     "crates/ruvector-rabitq",
     "crates/ruvector-rabitq-wasm",
+    "crates/ruvector-hadamard-sq",
     "crates/ruvector-turbovec",
     "crates/ruvector-turboquant",
     "crates/ruvector-rulake",
