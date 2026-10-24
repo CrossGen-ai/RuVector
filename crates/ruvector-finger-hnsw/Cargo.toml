@@ -1,0 +1,27 @@
+[package]
+name = "ruvector-finger-hnsw"
+version = "0.1.0"
+edition = "2021"
+description = "FINGER-style low-rank edge sketches for cheap distance approximation on HNSW-like graphs"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[[bench]]
+name = "finger_bench"
+path = "benches/finger_bench.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
