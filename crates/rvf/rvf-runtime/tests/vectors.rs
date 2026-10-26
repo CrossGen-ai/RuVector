@@ -106,8 +106,10 @@ fn walk(bytes: &[u8]) -> Vec<Seg> {
     out
 }
 
-/// Zero the 68-byte FileIdentity (after the "FIDI" marker) in a manifest.
-fn mask_identity(mut payload: Vec<u8>) -> Vec<u8> {
+/// Mask what depends on the (random) file id: the 68-byte FileIdentity after
+/// the "FIDI" marker, and, in a signed manifest's hash trailer, the hashes of
+/// earlier MANIFEST segments (their payloads embed the file id).
+fn mask_manifest(mut payload: Vec<u8>, manifest_ids: &[u64]) -> Vec<u8> {
     let marker = 0x4649_4449u32.to_le_bytes();
     let n = u32::from_le_bytes(payload[14..18].try_into().unwrap()) as usize;
     let del = 22 + n * 25;
@@ -115,6 +117,22 @@ fn mask_identity(mut payload: Vec<u8>) -> Vec<u8> {
     let at = del + 4 + ndel * 8;
     assert_eq!(payload[at..at + 4], marker, "FIDI marker");
     payload[at + 4..at + 4 + 68].fill(0);
+    let t = at + 72;
+    if payload.len() > t {
+        assert_eq!(
+            payload[t..t + 4],
+            0x4744_4853u32.to_le_bytes(),
+            "SHDG trailer"
+        );
+        let count = u32::from_le_bytes(payload[t + 4..t + 8].try_into().unwrap()) as usize;
+        for i in 0..count {
+            let e = t + 8 + i * 24;
+            let id = u64::from_le_bytes(payload[e..e + 8].try_into().unwrap());
+            if manifest_ids.contains(&id) {
+                payload[e + 8..e + 24].fill(0);
+            }
+        }
+    }
     payload
 }
 
@@ -122,6 +140,14 @@ fn assert_structurally_equal(committed: &[u8], fresh: &[u8]) {
     assert_eq!(committed.len(), fresh.len(), "file length");
     let (a, b) = (walk(committed), walk(fresh));
     assert_eq!(a.len(), b.len());
+    let ids = |segs: &[Seg]| -> Vec<u64> {
+        segs.iter()
+            .filter(|s| s.header.seg_type == rvf_types::SegmentType::Manifest as u8)
+            .map(|s| s.header.segment_id)
+            .collect()
+    };
+    let (ids_a, ids_b) = (ids(&a), ids(&b));
+    assert_eq!(ids_a, ids_b);
     for (x, y) in a.iter().zip(&b) {
         let (hx, hy) = (&x.header, &y.header);
         assert_eq!(
@@ -142,11 +168,9 @@ fn assert_structurally_equal(committed: &[u8], fresh: &[u8]) {
         );
         if hx.seg_type == rvf_types::SegmentType::Manifest as u8 {
             // The manifest hash covers the (random) file id: masked compare.
-            // The trailer hashes in a signed manifest cover other segments and
-            // are deterministic; the manifest's own hash is not checked here.
             assert_eq!(
-                mask_identity(x.payload.clone()),
-                mask_identity(y.payload.clone())
+                mask_manifest(x.payload.clone(), &ids_a),
+                mask_manifest(y.payload.clone(), &ids_b)
             );
         } else {
             assert_eq!(x.payload, y.payload);

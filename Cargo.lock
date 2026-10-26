@@ -12200,6 +12200,7 @@ version = "2.3.0"
 dependencies = [
  "ed25519-dalek",
  "rvf-crypto",
+ "rvf-runtime",
  "rvf-types",
  "rvf-wire",
  "serde",
@@ -12251,9 +12252,11 @@ name = "rvf-runtime"
 version = "0.3.2"
 dependencies = [
  "crc32fast",
+ "log",
  "rvf-index",
  "rvf-quant",
  "rvf-types",
+ "rvf-wire",
 ]
 
 [[package]]
