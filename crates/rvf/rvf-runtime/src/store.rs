@@ -44,6 +44,7 @@ use crate::write_path::{self, SegmentWriter};
 
 mod policy_api;
 mod security;
+mod stream_support;
 pub use security::security_error_code;
 use security::SecurityState;
 
