@@ -1,0 +1,18 @@
+[workspace]
+
+[package]
+name = "ruvector-ef-hnsw-adjacency"
+version = "0.1.0"
+edition = "2021"
+description = "Elias-Fano compressed HNSW adjacency lists for memory-efficient graph vector indexes."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[[bench]]
+name = "ef_bench"
+harness = false
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
