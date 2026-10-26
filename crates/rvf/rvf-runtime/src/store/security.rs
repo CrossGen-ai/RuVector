@@ -367,6 +367,19 @@ impl RvfStore {
 
         let policy = self.security.policy;
         if policy == SecurityPolicy::Permissive {
+            // Verify nothing, but still recognise a root page this crate
+            // wrote (valid CRC, names the manifest we found) so a read-write
+            // `open()` of a signed file cuts it before appending instead of
+            // leaving a stale page in the middle of the file. The file is
+            // unsigned from that write on; that is what Permissive means.
+            if let Some(page) = read_trailing_page(&self.file) {
+                let v = root_page::view(&page);
+                if v.crc_ok && v.sig_algo != 0 && v.l1_offset == located.offset {
+                    self.security
+                        .root_page_present
+                        .store(true, Ordering::Release);
+                }
+            }
             return Ok(());
         }
         if let Err(e) = check_signed_root(&self.file, &self.security.trusted_signers, located) {

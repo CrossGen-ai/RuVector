@@ -575,3 +575,26 @@ fn read_only_policy_open_cannot_write_and_signed_open_needs_a_signing_policy() {
     // open_signed itself verifies first: an untrusted key list is refused.
     assert!(RvfStore::open_signed(&p, opts(&[]), SecurityPolicy::Strict, &SECRET).is_err());
 }
+
+#[test]
+fn plain_open_of_a_signed_file_cuts_the_page_on_write_and_the_file_is_then_unsigned() {
+    let d = tempfile::tempdir().unwrap();
+    let p = signed_store(d.path());
+    let mut s = RvfStore::open(&p).unwrap(); // Permissive: no key, nothing verified
+    s.ingest_batch(&[&[5.0, 5.0, 5.0, 5.0]], &[900], None)
+        .unwrap();
+    s.close().unwrap();
+    let bytes = std::fs::read(&p).unwrap();
+    // No stale RVM0 page is left behind in the middle of the file.
+    assert!(split_root_page(&bytes).1.is_none());
+    assert!(!bytes
+        .chunks(64)
+        .any(|c| c[..4] == rvf_types::ROOT_MANIFEST_MAGIC.to_le_bytes()));
+    // Honest outcome: no longer acceptable under Strict, fine under Permissive.
+    let e = security(open_err(&p, &[public(&SECRET)], SecurityPolicy::Strict));
+    assert!(matches!(e, SecurityError::UnsignedManifest { .. }));
+    assert_eq!(
+        RvfStore::open_readonly(&p).unwrap().status().total_vectors,
+        13
+    );
+}
