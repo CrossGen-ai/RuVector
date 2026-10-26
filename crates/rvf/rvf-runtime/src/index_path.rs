@@ -304,7 +304,6 @@ impl VectorIndex {
             dirty: false,
         })
     }
-
 }
 
 /// Decode an INDEX_SEG payload (codec + `RVIX` trailer) into a graph over

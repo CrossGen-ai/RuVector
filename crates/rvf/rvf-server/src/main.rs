@@ -26,6 +26,31 @@ struct Cli {
     /// Vector dimension (used when creating a new store)
     #[arg(long, default_value_t = 128)]
     dimension: u16,
+
+    /// Serve this .rvf as a verified stream (requires --stream-key)
+    #[arg(long, requires = "stream_key")]
+    stream_body: Option<PathBuf>,
+
+    /// Path of the descriptor signing key (64 hex chars or 32 raw bytes);
+    /// supplied by the operator, never generated or stored by the server
+    #[arg(long)]
+    stream_key: Option<PathBuf>,
+
+    /// Stream frame size as log2 bytes (12..=30, or 255 for one per segment)
+    #[arg(long, default_value_t = 16)]
+    stream_chunk_log2: u8,
+
+    /// Descriptor epoch
+    #[arg(long, default_value_t = 1)]
+    stream_epoch: u64,
+
+    /// Concurrent body streams allowed
+    #[arg(long, default_value_t = 8)]
+    stream_max_streams: usize,
+
+    /// Largest response for one Range request, in bytes
+    #[arg(long, default_value_t = 268_435_456)]
+    stream_max_range: u64,
 }
 
 #[tokio::main]
@@ -39,7 +64,18 @@ async fn main() {
         dimension: cli.dimension,
     };
 
-    if let Err(e) = rvf_server::run(config).await {
+    let stream = match (cli.stream_body, cli.stream_key) {
+        (Some(body), Some(key)) => {
+            let mut c = rvf_server::stream::StreamServerConfig::new(body, key);
+            c.chunk_log2 = cli.stream_chunk_log2;
+            c.epoch = cli.stream_epoch;
+            c.max_concurrent_streams = cli.stream_max_streams;
+            c.max_range_bytes = cli.stream_max_range;
+            Some(c)
+        }
+        _ => None,
+    };
+    if let Err(e) = rvf_server::run_with_stream(config, stream).await {
         eprintln!("fatal: {e}");
         std::process::exit(1);
     }

@@ -60,6 +60,10 @@ pub fn assert_authentic(
     ds: &StreamDataset,
 ) {
     for (id, v) in ing.vectors().iter() {
-        assert_eq!(v, ds.vector(id as usize), "visible vector {id} is not authentic");
+        assert_eq!(
+            v,
+            ds.vector(id as usize),
+            "visible vector {id} is not authentic"
+        );
     }
 }

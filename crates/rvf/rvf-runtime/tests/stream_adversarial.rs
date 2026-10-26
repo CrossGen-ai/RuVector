@@ -12,7 +12,11 @@ use rvf_runtime::progressive_stream::StreamWitness;
 use rvf_types::ErrorCode;
 use rvf_wire::stream::{EpochPin, StreamPolicy, StreamState};
 
-fn run_mirror<'p>(f: &Fixture, bytes: Vec<u8>, policy: StreamPolicy<'p>) -> (RunEnd, StreamClient<'p, MemTransport>) {
+fn run_mirror<'p>(
+    f: &Fixture,
+    bytes: Vec<u8>,
+    policy: StreamPolicy<'p>,
+) -> (RunEnd, StreamClient<'p, MemTransport>) {
     let mut c = StreamClient::new(
         policy,
         MemTransport::new(bytes),
@@ -61,7 +65,10 @@ fn reordered_frames_are_refused() {
     fr.insert(1, last);
     let (end, c) = run_mirror(&f, fr.concat(), StreamPolicy::new(&keys));
     not_complete(end, &c);
-    assert!(c.ingest.vectors().is_empty(), "nothing released before its stage");
+    assert!(
+        c.ingest.vectors().is_empty(),
+        "nothing released before its stage"
+    );
     assert!(!c.ingest.layers().layer_a);
 }
 
@@ -96,16 +103,26 @@ fn duplicated_and_bit_flipped_frames_are_refused() {
 fn replayed_old_epoch_is_rejected_with_a_witness() {
     let f = fixture_with(2600, 16, 8, 11, 1);
     let keys = [f.public];
-    let pin = |id: &[u8; 16]| (id == &f.file_id).then_some(EpochPin { epoch: 2, descriptor_hash: None });
+    let pin = |id: &[u8; 16]| {
+        (id == &f.file_id).then_some(EpochPin {
+            epoch: 2,
+            descriptor_hash: None,
+        })
+    };
     let mut policy = StreamPolicy::new(&keys);
     policy.epoch_pin = Some(&pin);
     let (end, c) = run_mirror(&f, frames(&f).concat(), policy);
     assert_eq!(end, RunEnd::Poisoned(ErrorCode::StreamStaleEpoch));
-    assert!(matches!(c.ingest.state(), StreamState::Rejected(ErrorCode::StreamStaleEpoch)));
+    assert!(matches!(
+        c.ingest.state(),
+        StreamState::Rejected(ErrorCode::StreamStaleEpoch)
+    ));
     assert!(c
         .ingest
         .witnesses()
-        .contains(&StreamWitness::DescriptorRejected(ErrorCode::StreamStaleEpoch)));
+        .contains(&StreamWitness::DescriptorRejected(
+            ErrorCode::StreamStaleEpoch
+        )));
     assert!(c.ingest.vectors().is_empty() && !c.ingest.layers().layer_a);
 }
 
@@ -145,13 +162,22 @@ fn size_lies_poison_before_allocating_and_unpublish_everything() {
     assert!(published_a, "layer A was searchable before the lie");
     assert_eq!(end, RunEnd::Poisoned(ErrorCode::StreamFrameSizeLie));
     let l = c.ingest.layers();
-    assert!(!l.layer_a && !l.layer_b && !l.layer_c, "poison drops every layer");
-    assert!(c.ingest.vectors().is_empty(), "poison unpublishes every vector");
+    assert!(
+        !l.layer_a && !l.layer_b && !l.layer_c,
+        "poison drops every layer"
+    );
+    assert!(
+        c.ingest.vectors().is_empty(),
+        "poison unpublishes every vector"
+    );
     let a = c.ingest.query(f.ds.vector(0), 5, 64);
     assert!(a.envelope.results.is_empty() && !a.sealed);
     assert!(matches!(
         c.ingest.witnesses().last(),
-        Some(StreamWitness::StreamPoisoned { reason: ErrorCode::StreamFrameSizeLie, .. })
+        Some(StreamWitness::StreamPoisoned {
+            reason: ErrorCode::StreamFrameSizeLie,
+            ..
+        })
     ));
     // The reassembly buffer never grew toward the declared 4 GiB.
     assert!(c.ingest.offset() < 1 << 28);
@@ -166,11 +192,18 @@ fn transient_corruption_is_retried_to_completion() {
         seed: u64,
     }
     impl Transport for Flaky {
-        fn fetch(&mut self, off: u64, sink: &mut dyn FnMut(&[u8]) -> bool) -> std::io::Result<FetchEnd> {
+        fn fetch(
+            &mut self,
+            off: u64,
+            sink: &mut dyn FnMut(&[u8]) -> bool,
+        ) -> std::io::Result<FetchEnd> {
             let mut data = self.good[off as usize..].to_vec();
             if self.corrupt_left > 0 && data.len() > 5000 {
                 self.corrupt_left -= 1;
-                self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                self.seed = self
+                    .seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 let at = 1000 + (self.seed >> 33) as usize % (data.len() - 1000);
                 data[at] ^= 0x10;
             }
@@ -188,10 +221,20 @@ fn transient_corruption_is_retried_to_completion() {
     policy.fault_budget = 100;
     let mut c = StreamClient::new(
         policy,
-        Flaky { good: frames(&f).concat(), corrupt_left: 6, seed: 1 },
-        ClientConfig { max_stalls: 4, frame_retries: 5 },
+        Flaky {
+            good: frames(&f).concat(),
+            corrupt_left: 6,
+            seed: 1,
+        },
+        ClientConfig {
+            max_stalls: 4,
+            frame_retries: 5,
+        },
     );
-    assert_eq!(c.run(&mut |ing| assert_authentic(ing, &f.ds)), RunEnd::Complete);
+    assert_eq!(
+        c.run(&mut |ing| assert_authentic(ing, &f.ds)),
+        RunEnd::Complete
+    );
     assert!(c.stats.refusals >= 1, "{:?}", c.stats);
     assert_eq!(c.ingest.vectors().len(), f.ds.len());
 }
