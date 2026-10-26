@@ -40,7 +40,12 @@ use crate::options::*;
 use crate::rabitq_path::RabitqState;
 use crate::read_path::{self, VectorData};
 use crate::status::{CompactionState, StoreStatus};
-use crate::write_path::SegmentWriter;
+use crate::write_path::{self, SegmentWriter};
+
+mod policy_api;
+mod security;
+pub use security::security_error_code;
+use security::SecurityState;
 
 /// Helper to convert any error into an RvfError with the given code.
 fn err(code: ErrorCode) -> RvfError {
@@ -202,6 +207,8 @@ pub struct RvfStore {
     /// stores and until the first COW query on a child. Boxed to break the
     /// recursive type; `Mutex` so `query(&self)` can populate it lazily.
     parent_store: Mutex<Option<Box<RvfStore>>>,
+    /// Security policy state (ADR-033 section 4, ADR-354 item 5).
+    security: SecurityState,
 }
 
 /// Clears an `AtomicBool` on drop, so a panicking index build can never
@@ -217,7 +224,18 @@ impl Drop for ClearOnDrop<'_> {
 
 impl RvfStore {
     /// Create a new RVF store at the given path.
+    ///
+    /// The file is unsigned: this is the `Permissive` creation path. Use
+    /// [`RvfStore::create_signed`] for a store `Strict` will accept.
     pub fn create(path: &Path, options: RvfOptions) -> Result<Self, RvfError> {
+        Self::create_inner(path, options, None)
+    }
+
+    fn create_inner(
+        path: &Path,
+        options: RvfOptions,
+        signing_key: Option<[u8; 32]>,
+    ) -> Result<Self, RvfError> {
         if options.dimension == 0 {
             return Err(err(ErrorCode::InvalidManifest));
         }
@@ -278,8 +296,14 @@ impl RvfStore {
             rabitq: Mutex::new(None),
             rabitq_building: AtomicBool::new(false),
             parent_store: Mutex::new(None),
+            security: signing_key.map_or_else(SecurityState::permissive, SecurityState::signer),
         };
 
+        if signing_key.is_some() {
+            if let Some(w) = store.seg_writer.as_mut() {
+                w.use_cryptographic_hash();
+            }
+        }
         store.write_manifest()?;
         Ok(store)
     }
@@ -295,7 +319,13 @@ impl RvfStore {
     /// dropped generations or records. The next metadata write re-anchors the
     /// chain on the recovered state, and `compact()` reclaims the unreachable
     /// bytes.
+    ///
+    /// Nothing is verified (`Permissive`); see [`RvfStore::open_with_policy`].
     pub fn open(path: &Path) -> Result<Self, RvfError> {
+        Self::open_inner(path, SecurityState::permissive())
+    }
+
+    fn open_inner(path: &Path, security: SecurityState) -> Result<Self, RvfError> {
         if !path.exists() {
             return Err(err(ErrorCode::ManifestNotFound));
         }
@@ -354,6 +384,7 @@ impl RvfStore {
             rabitq: Mutex::new(None),
             rabitq_building: AtomicBool::new(false),
             parent_store: Mutex::new(None),
+            security,
         };
 
         store.boot()?;
@@ -372,6 +403,14 @@ impl RvfStore {
     fn open_readonly_with_ancestry(
         path: &Path,
         ancestry: &mut HashSet<PathBuf>,
+    ) -> Result<Self, RvfError> {
+        Self::open_readonly_inner(path, ancestry, SecurityState::permissive())
+    }
+
+    fn open_readonly_inner(
+        path: &Path,
+        ancestry: &mut HashSet<PathBuf>,
+        security: SecurityState,
     ) -> Result<Self, RvfError> {
         if !path.exists() {
             return Err(err(ErrorCode::ManifestNotFound));
@@ -431,6 +470,7 @@ impl RvfStore {
             rabitq: Mutex::new(None),
             rabitq_building: AtomicBool::new(false),
             parent_store: Mutex::new(None),
+            security,
         };
 
         let boot_result = store.boot_with_ancestry(ancestry);
@@ -535,10 +575,7 @@ impl RvfStore {
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
 
         let (vec_seg_id, vec_seg_offset) = {
-            let mut buf_writer = BufWriter::with_capacity(256 * 1024, &self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_vec_seg(
                     &mut buf_writer,
@@ -1445,6 +1482,7 @@ impl RvfStore {
             self.file
                 .sync_all()
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            self.seal_root_page()?;
         }
 
         Ok(results)
@@ -1466,10 +1504,7 @@ impl RvfStore {
         let epoch = self.epoch + 1;
 
         let (journal_seg_id, journal_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_journal_seg(&mut buf_writer, ids, epoch)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -1656,12 +1691,20 @@ impl RvfStore {
             reader
                 .read_to_end(&mut buf)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            // A trailing Level-0 root page is not a segment; the rewritten
+            // file is re-sealed below if this store signs.
+            let body_len = rvf_wire::tail_scan::split_root_page(&buf).0.len();
+            buf.truncate(body_len);
             buf
         };
 
         let temp_path = self.path.with_extension("rvf.compact.tmp");
         let mut new_segment_dir = Vec::new();
+        let signing = self.security.signing_key.is_some();
         let mut seg_writer = SegmentWriter::new(1);
+        if signing {
+            seg_writer.use_cryptographic_hash();
+        }
         let keeps_metadata = !self.metadata.is_empty() || !self.file_metadata.is_empty();
         let mut compacted_metadata_bytes = 0usize;
         let compacted_generation = self
@@ -1733,17 +1776,22 @@ impl RvfStore {
                 };
                 let src = &original_bytes[*orig_offset..end];
 
-                // Flush the BufWriter so stream_position reflects the true offset.
+                // Copy verbatim at a 64-byte boundary (padding after), so a
+                // preserved legacy segment stays byte-identical and the
+                // rewritten file keeps a wire-aligned layout.
                 temp_writer
                     .flush()
                     .map_err(|_| err(ErrorCode::FsyncFailed))?;
-                let new_offset = temp_writer
-                    .stream_position()
+                let new_offset = seg_writer
+                    .copy_raw_segment(&mut temp_writer, src)
                     .map_err(|_| err(ErrorCode::FsyncFailed))?;
-
-                temp_writer
-                    .write_all(src)
-                    .map_err(|_| err(ErrorCode::FsyncFailed))?;
+                if signing {
+                    // Signed stores commit to SHAKE-256-128 of every payload.
+                    seg_writer.record_hash(
+                        *seg_id,
+                        rvf_wire::hash::compute_shake256_128(&src[SEGMENT_HEADER_SIZE..]),
+                    );
+                }
 
                 // Ensure the seg_writer's next_seg_id stays above any preserved ID.
                 while seg_writer.next_id() <= *seg_id {
@@ -1781,7 +1829,16 @@ impl RvfStore {
             temp_writer
                 .flush()
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
-            seg_writer
+            let hash_entries = if signing {
+                Some(
+                    seg_writer
+                        .hash_entries(&new_segment_dir)
+                        .ok_or_else(|| err(ErrorCode::InvalidManifest))?,
+                )
+            } else {
+                None
+            };
+            let (m_id, m_offset) = seg_writer
                 .write_manifest_seg_with_identity(
                     &mut temp_writer,
                     self.epoch,
@@ -1792,8 +1849,24 @@ impl RvfStore {
                     &new_segment_dir,
                     &empty_dels,
                     fi,
+                    hash_entries.as_deref(),
                 )
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            if signing {
+                let len = write_path::manifest_payload_len(
+                    new_segment_dir.len(),
+                    0,
+                    fi.is_some(),
+                    hash_entries.as_ref().map(Vec::len),
+                );
+                self.security.last_manifest = Some(security::LastManifest {
+                    offset: m_offset,
+                    len: SEGMENT_HEADER_SIZE as u64 + len,
+                    hash: seg_writer
+                        .hash_of(m_id)
+                        .ok_or_else(|| err(ErrorCode::InvalidManifest))?,
+                });
+            }
 
             temp_writer
                 .flush()
@@ -1818,6 +1891,10 @@ impl RvfStore {
             .write(true)
             .open(&self.path)
             .map_err(|_| err(ErrorCode::InvalidManifest))?;
+        // The rewritten file has no root page until it is re-sealed below.
+        self.security
+            .root_page_present
+            .store(false, Ordering::Release);
 
         self.metadata_chain = if keeps_metadata {
             MetadataChainState {
@@ -1848,6 +1925,8 @@ impl RvfStore {
                 .sync_all()
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
         }
+        self.refresh_committed();
+        self.seal_root_page()?;
 
         Ok(CompactionResult {
             segments_compacted,
@@ -1911,10 +1990,7 @@ impl RvfStore {
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::with_capacity(256 * 1024, &self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_index_seg(&mut buf_writer, &payload)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -1996,10 +2072,7 @@ impl RvfStore {
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_kernel_seg(&mut buf_writer, &header_bytes, kernel_image, cmdline_bytes)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -2091,10 +2164,7 @@ impl RvfStore {
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
 
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             // Write as raw kernel segment: the write_kernel_seg expects
             // header_bytes separately, but we need to include binding in
             // the "image" portion to keep the wire format correct.
@@ -2155,7 +2225,7 @@ impl RvfStore {
 
         let (_header, payload) = {
             let mut reader = BufReader::new(&self.file);
-            read_path::read_segment_payload(&mut reader, entry.1)
+            self.read_seg(&mut reader, entry.1)
                 .map_err(|_| err(ErrorCode::InvalidChecksum))?
         };
 
@@ -2231,10 +2301,7 @@ impl RvfStore {
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_ebpf_seg(&mut buf_writer, &header_bytes, program_bytecode, btf_data)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -2279,7 +2346,7 @@ impl RvfStore {
 
         let (_header, payload) = {
             let mut reader = BufReader::new(&self.file);
-            read_path::read_segment_payload(&mut reader, entry.1)
+            self.read_seg(&mut reader, entry.1)
                 .map_err(|_| err(ErrorCode::InvalidChecksum))?
         };
 
@@ -2337,10 +2404,7 @@ impl RvfStore {
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_dashboard_seg(&mut buf_writer, &header_bytes, bundle_data)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -2388,7 +2452,7 @@ impl RvfStore {
 
         let (_header, payload) = {
             let mut reader = BufReader::new(&self.file);
-            read_path::read_segment_payload(&mut reader, entry.1)
+            self.read_seg(&mut reader, entry.1)
                 .map_err(|_| err(ErrorCode::InvalidChecksum))?
         };
 
@@ -2452,10 +2516,7 @@ impl RvfStore {
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_wasm_seg(&mut buf_writer, &header_bytes, wasm_bytecode)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -2499,7 +2560,7 @@ impl RvfStore {
 
         let (_header, payload) = {
             let mut reader = BufReader::new(&self.file);
-            read_path::read_segment_payload(&mut reader, entry.1)
+            self.read_seg(&mut reader, entry.1)
                 .map_err(|_| err(ErrorCode::InvalidChecksum))?
         };
 
@@ -2530,7 +2591,7 @@ impl RvfStore {
         for entry in entries {
             let (_header, payload) = {
                 let mut reader = BufReader::new(&self.file);
-                read_path::read_segment_payload(&mut reader, entry.1)
+                self.read_seg(&mut reader, entry.1)
                     .map_err(|_| err(ErrorCode::InvalidChecksum))?
             };
 
@@ -2562,7 +2623,8 @@ impl RvfStore {
             // Read the WasmHeader role byte (offset 0x06 within the payload)
             let result = (|| -> Result<bool, RvfError> {
                 let mut reader = BufReader::new(&self.file);
-                let (_header, payload) = read_path::read_segment_payload(&mut reader, offset)
+                let (_header, payload) = self
+                    .read_seg(&mut reader, offset)
                     .map_err(|_| err(ErrorCode::InvalidChecksum))?;
                 if payload.len() < 64 {
                     return Ok(false);
@@ -3078,6 +3140,7 @@ impl RvfStore {
             rabitq: Mutex::new(None),
             rabitq_building: AtomicBool::new(false),
             parent_store: Mutex::new(None),
+            security: SecurityState::permissive(),
         };
 
         store.write_manifest()?;
@@ -3149,10 +3212,7 @@ impl RvfStore {
             .unwrap_or(0);
 
         let (seg_id, seg_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_witness_seg(
                     &mut buf_writer,
@@ -3196,16 +3256,20 @@ impl RvfStore {
     }
 
     fn boot_with_ancestry(&mut self, ancestry: &mut HashSet<PathBuf>) -> Result<(), RvfError> {
-        let manifest = {
+        let located = {
             let mut reader = BufReader::new(&self.file);
             read_path::find_latest_manifest(&mut reader)
                 .map_err(|_| err(ErrorCode::ManifestNotFound))?
         };
 
-        let manifest = match manifest {
+        let located = match located {
             Some(m) => m,
             None => return Err(err(ErrorCode::ManifestNotFound)),
         };
+        // Security policy (no-op under Permissive): signature, manifest
+        // binding, and committed per-segment hashes (ADR-354 item 5).
+        self.apply_open_policy(&located)?;
+        let manifest = located.manifest.clone();
 
         self.epoch = manifest.epoch;
         self.options.dimension = manifest.dimension;
@@ -3240,8 +3304,8 @@ impl RvfStore {
         for entry in vec_seg_entries {
             let (_header, payload) = {
                 let mut reader = BufReader::new(&self.file);
-                read_path::read_segment_payload(&mut reader, entry.offset)
-                    .map_err(|_| err(ErrorCode::InvalidChecksum))?
+                self.read_seg(&mut reader, entry.offset)
+                    .map_err(|e| Self::map_read_error(&e, ErrorCode::InvalidChecksum))?
             };
 
             // Fast path: bulk-copy the segment's rows straight into the
@@ -3278,9 +3342,15 @@ impl RvfStore {
         if let Some((_, offset, _, _)) = index_entry {
             let payload = {
                 let mut reader = BufReader::new(&self.file);
-                read_path::read_segment_payload(&mut reader, offset)
-                    .ok()
-                    .map(|(_, p)| p)
+                match self.read_seg(&mut reader, offset) {
+                    Ok((_, p)) => Some(p),
+                    // A signature-checking policy must not hide tampering by
+                    // quietly rebuilding the index: refuse the open.
+                    Err(e) if self.security.policy.requires_signature() => {
+                        return Err(Self::map_read_error(&e, ErrorCode::InvalidChecksum));
+                    }
+                    Err(_) => None,
+                }
             };
             if let Some(payload) = payload {
                 if let Some(idx) = VectorIndex::decode_payload(&payload, &self.vectors) {
@@ -3296,8 +3366,11 @@ impl RvfStore {
                 .map(|&(id, _, _, _)| id)
                 .max()
                 .unwrap_or(0);
-            self.seg_writer = Some(SegmentWriter::new(max_seg_id + 1));
+            let mut writer = SegmentWriter::new(max_seg_id + 1);
+            self.configure_writer(&mut writer, manifest.seg_hashes.as_deref());
+            self.seg_writer = Some(writer);
         }
+        self.verify_all_segments()?;
 
         Ok(())
     }
@@ -3324,7 +3397,7 @@ impl RvfStore {
 
         let cow_payload = {
             let mut reader = BufReader::new(&self.file);
-            read_path::read_segment_payload(&mut reader, cow_entry.1)
+            self.read_seg(&mut reader, cow_entry.1)
                 .map_err(|_| err(ErrorCode::CowMapCorrupt))?
                 .1
         };
@@ -3432,7 +3505,7 @@ impl RvfStore {
 
         let membership_payload = {
             let mut reader = BufReader::new(&self.file);
-            read_path::read_segment_payload(&mut reader, membership_entry.1)
+            self.read_seg(&mut reader, membership_entry.1)
                 .map_err(|_| err(ErrorCode::MembershipInvalid))?
                 .1
         };
@@ -3561,10 +3634,7 @@ impl RvfStore {
             .seg_writer
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
-        let mut buf_writer = BufWriter::new(&self.file);
-        buf_writer
-            .seek(SeekFrom::End(0))
-            .map_err(|_| err(ErrorCode::FsyncFailed))?;
+        let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
         let (cow_id, cow_offset) = writer
             .write_cow_map_seg(&mut buf_writer, &cow_payload)
             .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -3608,11 +3678,20 @@ impl RvfStore {
             None
         };
 
+        // Signed stores commit to every directory segment's hash.
+        let signing = self.security.signing_key.is_some();
+        let hash_entries = if signing {
+            Some(
+                writer
+                    .hash_entries(&self.segment_dir)
+                    .ok_or_else(|| err(ErrorCode::InvalidManifest))?,
+            )
+        } else {
+            None
+        };
+
         let (manifest_seg_id, manifest_offset) = {
-            let mut buf_writer = BufWriter::new(&self.file);
-            buf_writer
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buf_writer = Self::append_cursor(&self.file, &self.security)?;
             let written = writer
                 .write_manifest_seg_with_identity(
                     &mut buf_writer,
@@ -3624,6 +3703,7 @@ impl RvfStore {
                     &self.segment_dir,
                     &deleted_ids,
                     fi,
+                    hash_entries.as_deref(),
                 )
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
             // A dropped `BufWriter` swallows flush errors, so an acknowledged
@@ -3634,10 +3714,21 @@ impl RvfStore {
             written
         };
 
-        let mut manifest_payload_len =
-            (22 + self.segment_dir.len() * 25 + 4 + deleted_ids.len() * 8) as u64;
-        if fi.is_some() {
-            manifest_payload_len += 4 + 68; // FIDI marker + FileIdentity
+        let manifest_payload_len = write_path::manifest_payload_len(
+            self.segment_dir.len(),
+            deleted_ids.len(),
+            fi.is_some(),
+            hash_entries.as_ref().map(Vec::len),
+        );
+        if signing {
+            let hash = writer
+                .hash_of(manifest_seg_id)
+                .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
+            self.security.last_manifest = Some(security::LastManifest {
+                offset: manifest_offset,
+                len: SEGMENT_HEADER_SIZE as u64 + manifest_payload_len,
+                hash,
+            });
         }
         self.segment_dir.push((
             manifest_seg_id,
@@ -3649,7 +3740,8 @@ impl RvfStore {
         self.file
             .sync_all()
             .map_err(|_| err(ErrorCode::FsyncFailed))?;
-        Ok(())
+        self.refresh_committed();
+        self.seal_root_page()
     }
 
     /// True when `vector_id` belongs to this store's committed vector state and
@@ -3822,10 +3914,7 @@ impl RvfStore {
             .as_mut()
             .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
         let (segment_id, offset) = {
-            let mut buffered = BufWriter::new(&self.file);
-            buffered
-                .seek(SeekFrom::End(0))
-                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            let mut buffered = Self::append_cursor(&self.file, &self.security)?;
             let result = writer
                 .write_meta_seg(&mut buffered, &payload)
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
@@ -3928,7 +4017,7 @@ impl RvfStore {
             }
             let payload = {
                 let mut reader = BufReader::new(&self.file);
-                read_path::read_segment_payload(&mut reader, offset)
+                self.read_seg(&mut reader, offset)
                     .ok()
                     .map(|(_, payload)| payload)
             };

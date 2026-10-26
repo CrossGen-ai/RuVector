@@ -109,6 +109,11 @@ pub struct RvfOptions {
     pub witness: WitnessConfig,
     /// Security policy for manifest signature verification (ADR-033 §4).
     pub security_policy: SecurityPolicy,
+    /// Ed25519 public keys the open path trusts for Level-0 root signatures
+    /// (ADR-033 section 4). Consulted by `open_with_policy`/`open_with_options`/
+    /// `open_signed`; with an empty list every signature-checking policy
+    /// refuses signed files as `UnknownSigner`.
+    pub trusted_signers: Vec<[u8; 32]>,
 }
 
 impl Default for RvfOptions {
@@ -124,6 +129,7 @@ impl Default for RvfOptions {
             ef_construction: 200,
             witness: WitnessConfig::default(),
             security_policy: SecurityPolicy::Strict,
+            trusted_signers: Vec::new(),
         }
     }
 }
