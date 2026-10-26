@@ -1755,6 +1755,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvf-forge-core"
+version = "2.3.0"
+dependencies = [
+ "ed25519-dalek",
+ "rvf-crypto",
+ "rvf-types",
+ "rvf-wire",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "rvf-import"
 version = "0.1.0"
 dependencies = [
@@ -1782,6 +1795,7 @@ dependencies = [
  "rand",
  "rvf-adapter-rvlite",
  "rvf-crypto",
+ "rvf-forge-core",
  "rvf-index",
  "rvf-manifest",
  "rvf-quant",

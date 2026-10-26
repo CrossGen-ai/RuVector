@@ -89,6 +89,7 @@ pub enum Event<'a> {
     },
 }
 
+#[derive(Clone)]
 struct SegState {
     n: u32,
     next: u32,
@@ -96,6 +97,7 @@ struct SegState {
     done: bool,
 }
 
+#[derive(Clone)]
 struct IdentityTracker {
     hasher: Sha256,
     pos: u64,
@@ -103,6 +105,7 @@ struct IdentityTracker {
 }
 
 /// Verifies a stream of frames against a signed descriptor.
+#[derive(Clone)]
 pub struct StreamVerifier<'p> {
     policy: StreamPolicy<'p>,
     state: StreamState,
