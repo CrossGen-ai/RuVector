@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 //! Shared helpers for the RVSD tests.
 
+pub mod json;
+
 use ed25519_dalek::SigningKey;
 use rvf_types::{SegmentFlags, ROOT_MANIFEST_MAGIC_BYTES, ROOT_MANIFEST_SIZE};
 use rvf_wire::stream::*;
@@ -113,4 +115,22 @@ pub fn assert_subset(r: &Run, body: &[u8]) {
             "released bytes differ at {o}"
         );
     }
+}
+
+/// Re-sign a mutated copy of a bundle's header and table with `key`.
+pub fn resign(
+    b: &StreamBundle,
+    key: &SigningKey,
+    f: impl FnOnce(&mut Vec<rvf_types::StreamEntry>, &mut rvf_types::StreamHeader),
+) -> Vec<u8> {
+    let (mut es, mut h) = (b.entries.clone(), b.header);
+    f(&mut es, &mut h);
+    let mut d = h.to_bytes().to_vec();
+    for e in &es {
+        d.extend_from_slice(&e.to_bytes());
+    }
+    d.extend_from_slice(&64u16.to_le_bytes());
+    let sig = rvf_crypto::sign_descriptor(&d, key);
+    d.extend_from_slice(&sig);
+    d
 }
