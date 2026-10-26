@@ -42,6 +42,7 @@ use crate::read_path::{self, VectorData};
 use crate::status::{CompactionState, StoreStatus};
 use crate::write_path::{self, SegmentWriter};
 
+mod policy_api;
 mod security;
 pub use security::security_error_code;
 use security::SecurityState;
@@ -1924,6 +1925,7 @@ impl RvfStore {
                 .sync_all()
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
         }
+        self.refresh_committed();
         self.seal_root_page()?;
 
         Ok(CompactionResult {
@@ -3738,6 +3740,7 @@ impl RvfStore {
         self.file
             .sync_all()
             .map_err(|_| err(ErrorCode::FsyncFailed))?;
+        self.refresh_committed();
         self.seal_root_page()
     }
 
