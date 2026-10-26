@@ -29,7 +29,10 @@ pub(crate) const ALGO_SHAKE256_128: u8 = 2;
 /// policy question (see `Strict`).
 pub(crate) fn verify_payload_hash(algo: u8, payload: &[u8], expected: &[u8; 16]) -> bool {
     match algo {
-        0 => legacy_content_hash(payload) == *expected || compute_content_hash(1, payload) == *expected,
+        0 => {
+            legacy_content_hash(payload) == *expected
+                || compute_content_hash(1, payload) == *expected
+        }
         1 | 2 => compute_content_hash(algo, payload) == *expected,
         _ => false,
     }

@@ -1891,7 +1891,9 @@ impl RvfStore {
             .open(&self.path)
             .map_err(|_| err(ErrorCode::InvalidManifest))?;
         // The rewritten file has no root page until it is re-sealed below.
-        self.security.root_page_present.store(false, Ordering::Release);
+        self.security
+            .root_page_present
+            .store(false, Ordering::Release);
 
         self.metadata_chain = if keeps_metadata {
             MetadataChainState {
@@ -2619,7 +2621,8 @@ impl RvfStore {
             // Read the WasmHeader role byte (offset 0x06 within the payload)
             let result = (|| -> Result<bool, RvfError> {
                 let mut reader = BufReader::new(&self.file);
-                let (_header, payload) = self.read_seg(&mut reader, offset)
+                let (_header, payload) = self
+                    .read_seg(&mut reader, offset)
                     .map_err(|_| err(ErrorCode::InvalidChecksum))?;
                 if payload.len() < 64 {
                     return Ok(false);

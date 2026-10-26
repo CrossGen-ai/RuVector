@@ -226,7 +226,13 @@ mod tests {
         let id = FileIdentity::new_root([1; 16]);
         let page = build_signed_page(&content(&id), &[5u8; 32]);
         let public = rvf_types::ed25519::Ed25519Keypair::from_secret(&[5u8; 32]).public_key();
-        for off in [OFF_L1_OFFSET, OFF_L1_LENGTH, OFF_L1_CONTENT_HASH, OFF_SIG_ALGO, OFF_EPOCH] {
+        for off in [
+            OFF_L1_OFFSET,
+            OFF_L1_LENGTH,
+            OFF_L1_CONTENT_HASH,
+            OFF_SIG_ALGO,
+            OFF_EPOCH,
+        ] {
             let mut p = page;
             p[off] ^= 1;
             reseal_crc(&mut p);

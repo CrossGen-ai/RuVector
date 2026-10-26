@@ -47,7 +47,12 @@ pub fn split_root_page(data: &[u8]) -> (&[u8], Option<&[u8]>) {
         return (data, None);
     }
     let start = data.len() - ROOT_MANIFEST_SIZE;
-    let magic = u32::from_le_bytes([data[start], data[start + 1], data[start + 2], data[start + 3]]);
+    let magic = u32::from_le_bytes([
+        data[start],
+        data[start + 1],
+        data[start + 2],
+        data[start + 3],
+    ]);
     if magic == ROOT_MANIFEST_MAGIC {
         (&data[..start], Some(&data[start..]))
     } else {
@@ -303,7 +308,7 @@ mod tests {
     fn aligned_candidates_are_a_subsequence_of_byte_granular() {
         let mut file = Vec::new();
         for id in 0..4u64 {
-            file.extend_from_slice(&make_manifest_segment(id, &vec![id as u8; 70]));
+            file.extend_from_slice(&make_manifest_segment(id, &[id as u8; 70]));
             file.extend_from_slice(&[0xAA; 3]);
         }
         let aligned: Vec<_> = manifest_candidates(&file, ScanMode::Aligned)

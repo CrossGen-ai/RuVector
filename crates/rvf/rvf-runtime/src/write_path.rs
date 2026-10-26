@@ -94,7 +94,6 @@ impl SegmentWriter {
         self.hashes.get(&seg_id).copied()
     }
 
-
     /// Allocate a new segment ID.
     ///
     /// Uses checked arithmetic to detect overflow (would require 2^64 segments).

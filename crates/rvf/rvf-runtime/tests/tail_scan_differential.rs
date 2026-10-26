@@ -32,12 +32,15 @@ fn seg(ty: SegmentType, id: u64, payload: &[u8]) -> Vec<u8> {
 fn real_store_bytes() -> Vec<u8> {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("diff.rvf");
-    let mut o = RvfOptions::default();
-    o.dimension = 4;
+    let o = RvfOptions {
+        dimension: 4,
+        ..Default::default()
+    };
     let mut s = RvfStore::create(&path, o).unwrap();
     let v: Vec<Vec<f32>> = (0..8).map(|i| vec![i as f32; 4]).collect();
     let refs: Vec<&[f32]> = v.iter().map(|x| x.as_slice()).collect();
-    s.ingest_batch(&refs, &(0..8).collect::<Vec<u64>>(), None).unwrap();
+    s.ingest_batch(&refs, &(0..8).collect::<Vec<u64>>(), None)
+        .unwrap();
     s.close().unwrap();
     std::fs::read(&path).unwrap()
 }
@@ -80,7 +83,10 @@ fn unaligned_fake_in_a_trailing_payload_loses_to_the_real_manifest() {
     // The old byte-granular scan (what rvf-runtime did before ADR-354) would
     // pick the fake: it is newer and parses.
     let (byte_off, _) = find_latest_manifest_with_mode(&file, ScanMode::ByteGranular).unwrap();
-    assert!(byte_off > real_off, "legacy scan prefers the planted header");
+    assert!(
+        byte_off > real_off,
+        "legacy scan prefers the planted header"
+    );
     // The wire scanner and the runtime both ignore it.
     let got = differential::check(&file).unwrap().unwrap();
     assert_eq!(got, (real_off as u64, false));

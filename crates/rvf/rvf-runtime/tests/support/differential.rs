@@ -69,7 +69,10 @@ pub fn check(data: &[u8]) -> Result<Option<(u64, bool)>, String> {
                     return Err(format!("legacy mode missed parseable candidate at {}", b.0));
                 }
             } else if let Some(a) = aligned_ok.first() {
-                return Err(format!("aligned mode missed parseable candidate at {}", a.0));
+                return Err(format!(
+                    "aligned mode missed parseable candidate at {}",
+                    a.0
+                ));
             }
             Ok(None)
         }
@@ -79,7 +82,11 @@ pub fn check(data: &[u8]) -> Result<Option<(u64, bool)>, String> {
                 // I1
                 match aligned_ok.first() {
                     Some((o, _)) if *o == off => {}
-                    other => return Err(format!("I1: runtime {off} vs first parseable aligned {other:?}")),
+                    other => {
+                        return Err(format!(
+                            "I1: runtime {off} vs first parseable aligned {other:?}"
+                        ))
+                    }
                 }
                 // I2
                 if let Some((o, p)) = aligned.first() {
@@ -94,7 +101,11 @@ pub fn check(data: &[u8]) -> Result<Option<(u64, bool)>, String> {
                 // I3
                 match byte_ok.first() {
                     Some((o, _)) if *o == off => {}
-                    other => return Err(format!("I3: runtime {off} vs first parseable byte {other:?}")),
+                    other => {
+                        return Err(format!(
+                            "I3: runtime {off} vs first parseable byte {other:?}"
+                        ))
+                    }
                 }
                 if let Some((a, _)) = aligned_ok.first() {
                     if *a > off {

@@ -79,7 +79,11 @@ impl SecurityState {
         Self::with(SecurityPolicy::Strict, Vec::new(), Some(key))
     }
 
-    pub(super) fn with(policy: SecurityPolicy, trusted: Vec<[u8; 32]>, key: Option<[u8; 32]>) -> Self {
+    pub(super) fn with(
+        policy: SecurityPolicy,
+        trusted: Vec<[u8; 32]>,
+        key: Option<[u8; 32]>,
+    ) -> Self {
         Self {
             policy,
             trusted_signers: trusted,
@@ -99,7 +103,11 @@ pub(super) struct CommitMismatch {
 
 impl std::fmt::Display for CommitMismatch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "segment at 0x{:X} does not match its committed hash", self.offset)
+        write!(
+            f,
+            "segment at 0x{:X} does not match its committed hash",
+            self.offset
+        )
     }
 }
 
@@ -139,7 +147,9 @@ fn check_signed_root(
     located: &read_path::LocatedManifest,
 ) -> Result<(), SecurityError> {
     let off = located.offset;
-    let unsigned = SecurityError::UnsignedManifest { manifest_offset: off };
+    let unsigned = SecurityError::UnsignedManifest {
+        manifest_offset: off,
+    };
     let invalid = |phase: &'static str| SecurityError::InvalidSignature {
         manifest_offset: off,
         rejection_phase: phase,
@@ -152,7 +162,8 @@ fn check_signed_root(
     if !v.crc_ok {
         return Err(invalid("level0_crc32c"));
     }
-    if v.sig_algo != root_page::SIG_ALGO_ED25519 || v.sig_len as usize != root_page::ED25519_SIGNATURE_LEN
+    if v.sig_algo != root_page::SIG_ALGO_ED25519
+        || v.sig_len as usize != root_page::ED25519_SIGNATURE_LEN
     {
         return Err(invalid("signature_algorithm"));
     }
@@ -167,7 +178,10 @@ fn check_signed_root(
             expected_signer: trusted.first().map(root_page::signer_fingerprint),
         });
     }
-    if !matching.iter().any(|k| root_page::verify_signature(&page, k)) {
+    if !matching
+        .iter()
+        .any(|k| root_page::verify_signature(&page, k))
+    {
         return Err(invalid("signature_verification"));
     }
     // The page is authentic. Now bind it to the manifest we are about to use.
@@ -255,11 +269,8 @@ impl RvfStore {
         if !cfg!(feature = "ed25519") || !policy.requires_signature() {
             return Err(err(ErrorCode::InvalidSignature));
         }
-        let state = SecurityState::with(
-            policy,
-            options.trusted_signers.clone(),
-            Some(*signing_key),
-        );
+        let state =
+            SecurityState::with(policy, options.trusted_signers.clone(), Some(*signing_key));
         Self::open_inner(path, state)
     }
 
@@ -283,7 +294,10 @@ impl RvfStore {
         security: &SecurityState,
     ) -> Result<BufWriter<&'a File>, RvfError> {
         if security.root_page_present.swap(false, Ordering::AcqRel) {
-            let len = file.metadata().map_err(|_| err(ErrorCode::FsyncFailed))?.len();
+            let len = file
+                .metadata()
+                .map_err(|_| err(ErrorCode::FsyncFailed))?
+                .len();
             file.set_len(len.saturating_sub(root_page::PAGE_SIZE as u64))
                 .map_err(|_| err(ErrorCode::FsyncFailed))?;
         }
@@ -357,14 +371,20 @@ impl RvfStore {
             return Ok(());
         }
         if let Err(e) = check_signed_root(&self.file, &self.security.trusted_signers, located) {
-            log::warn!("rvf: {} policy rejected {}: {e}", policy_name(policy), self.path.display());
+            log::warn!(
+                "rvf: {} policy rejected {}: {e}",
+                policy_name(policy),
+                self.path.display()
+            );
             if policy.requires_signature() {
                 return Err(RvfError::Security(e));
             }
             // WarnOnly: continue; committed hashes (if the manifest has them)
             // are still enforced below.
         } else {
-            self.security.root_page_present.store(true, Ordering::Release);
+            self.security
+                .root_page_present
+                .store(true, Ordering::Release);
         }
 
         if let Some(entries) = &manifest.seg_hashes {
@@ -412,8 +432,8 @@ impl RvfStore {
                 .security
                 .last_manifest
                 .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
-            let live = (self.vectors.len() as u64)
-                .saturating_sub(self.deletion_bitmap.count() as u64);
+            let live =
+                (self.vectors.len() as u64).saturating_sub(self.deletion_bitmap.count() as u64);
             let page = root_page::build_signed_page(
                 &root_page::PageContent {
                     l1_offset: last.offset,
@@ -428,11 +448,16 @@ impl RvfStore {
                 &key,
             );
             let mut w = Self::append_cursor(&self.file, &self.security)?;
-            w.write_all(&page).map_err(|_| err(ErrorCode::FsyncFailed))?;
+            w.write_all(&page)
+                .map_err(|_| err(ErrorCode::FsyncFailed))?;
             w.flush().map_err(|_| err(ErrorCode::FsyncFailed))?;
             drop(w);
-            self.file.sync_all().map_err(|_| err(ErrorCode::FsyncFailed))?;
-            self.security.root_page_present.store(true, Ordering::Release);
+            self.file
+                .sync_all()
+                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            self.security
+                .root_page_present
+                .store(true, Ordering::Release);
             Ok(())
         }
         #[cfg(not(feature = "ed25519"))]
@@ -443,7 +468,11 @@ impl RvfStore {
     }
 
     /// Seed a freshly created `SegmentWriter` for this store's security mode.
-    pub(super) fn configure_writer(&self, writer: &mut SegmentWriter, hashes: Option<&[(u64, [u8; 16])]>) {
+    pub(super) fn configure_writer(
+        &self,
+        writer: &mut SegmentWriter,
+        hashes: Option<&[(u64, [u8; 16])]>,
+    ) {
         if self.security.signing_key.is_some() {
             writer.use_cryptographic_hash();
             for (id, h) in hashes.unwrap_or(&[]) {
