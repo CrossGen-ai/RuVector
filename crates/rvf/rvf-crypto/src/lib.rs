@@ -31,7 +31,8 @@ pub use lineage::{
 #[cfg(feature = "ed25519")]
 pub use sign::{sign_segment, verify_segment};
 pub use stream::{
-    chunk_list_hash, chunk_list_hash_flat, descriptor_hash, leaf_hash, signer_key_id,
+    chunk_list_hash, chunk_list_hash_flat, descriptor_hash, leaf_hash, sha256 as stream_sha256,
+    signer_key_id, Sha256 as StreamSha256,
 };
 #[cfg(feature = "ed25519")]
 pub use stream::{sign_descriptor, verify_descriptor};

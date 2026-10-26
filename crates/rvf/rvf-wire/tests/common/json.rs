@@ -47,7 +47,10 @@ impl J {
                 }
                 o.push('"');
             }
-            J::Arr(v) if v.iter().all(|e| matches!(e, J::Num(_) | J::Str(_) | J::Null | J::Bool(_))) => {
+            J::Arr(v)
+                if v.iter()
+                    .all(|e| matches!(e, J::Num(_) | J::Str(_) | J::Null | J::Bool(_))) =>
+            {
                 o.push('[');
                 for (i, e) in v.iter().enumerate() {
                     if i > 0 {

@@ -51,7 +51,10 @@ fn peak_of<R>(f: impl FnOnce() -> R) -> (R, usize) {
 fn p7_lying_descriptors_are_rejected_within_the_policy_bound() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let body = sample_body(1);
-    let b = StreamDescriptorBuilder::new(FILE_ID, key(1)).chunk_log2(12).build(&body).unwrap();
+    let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
     let sk = key(1);
     let keys = [pk(1)];
     let mut pol = StreamPolicy::new(&keys);
@@ -59,12 +62,47 @@ fn p7_lying_descriptors_are_rejected_within_the_policy_bound() {
     let bound = pol.descriptor_alloc_bound();
     type M = Box<dyn Fn(&mut Vec<StreamEntry>, &mut StreamHeader)>;
     let lies: Vec<(&str, M, E)> = vec![
-        ("seg_count 2^32-1", Box::new(|_, h| { h.seg_count = u32::MAX; h.table_len = 0; }), E::StreamTableInvalid),
-        ("seg_count 2^24", Box::new(|_, h| { h.seg_count = 1 << 24; h.table_len = (1u32 << 24).wrapping_mul(72); }), E::StreamLimitExceeded),
-        ("stored_len 2^63", Box::new(|es, _| es[0].stored_len = 1 << 63), E::StreamLimitExceeded),
-        ("uncompressed_len huge", Box::new(|es, _| es[0].uncompressed_len = u64::MAX), E::StreamLimitExceeded),
-        ("body_len 2^63", Box::new(|_, h| h.body_len = 1 << 63), E::StreamLimitExceeded),
-        ("class total", Box::new(|es, _| { for e in es.iter_mut() { e.uncompressed_len = 1 << 20; } es[0].stored_len = 1 << 29; }), E::StreamTableInvalid),
+        (
+            "seg_count 2^32-1",
+            Box::new(|_, h| {
+                h.seg_count = u32::MAX;
+                h.table_len = 0;
+            }),
+            E::StreamTableInvalid,
+        ),
+        (
+            "seg_count 2^24",
+            Box::new(|_, h| {
+                h.seg_count = 1 << 24;
+                h.table_len = (1u32 << 24).wrapping_mul(72);
+            }),
+            E::StreamLimitExceeded,
+        ),
+        (
+            "stored_len 2^63",
+            Box::new(|es, _| es[0].stored_len = 1 << 63),
+            E::StreamLimitExceeded,
+        ),
+        (
+            "uncompressed_len huge",
+            Box::new(|es, _| es[0].uncompressed_len = u64::MAX),
+            E::StreamLimitExceeded,
+        ),
+        (
+            "body_len 2^63",
+            Box::new(|_, h| h.body_len = 1 << 63),
+            E::StreamLimitExceeded,
+        ),
+        (
+            "class total",
+            Box::new(|es, _| {
+                for e in es.iter_mut() {
+                    e.uncompressed_len = 1 << 20;
+                }
+                es[0].stored_len = 1 << 29;
+            }),
+            E::StreamTableInvalid,
+        ),
     ];
     for (name, m, want) in lies {
         let d = resign(&b, &sk, |es, h| m(es, h));
@@ -76,7 +114,7 @@ fn p7_lying_descriptors_are_rejected_within_the_policy_bound() {
     // descriptor (210 bytes) declaring 2^24 segments is refused at the length check
     let mut h = b.header;
     h.seg_count = 1 << 24;
-    h.table_len = (1u32 << 24) * 72 / 1; // 1.2 GB table claimed
+    h.table_len = (1u32 << 24) * 72; // 1.2 GB table claimed
     let mut d = h.to_bytes().to_vec();
     d.extend_from_slice(&[0u8; 66]);
     let (r, peak) = peak_of(|| decode_descriptor(&d, &pol));
@@ -95,16 +133,32 @@ fn p7_a_valid_max_size_descriptor_stays_within_the_bound() {
     use rvf_types::SegmentFlags as F;
     let mut body = Vec::new();
     for i in 0..800u64 {
-        body.extend(rvf_wire::writer::write_segment(0x01, &[], F::empty(), i + 1));
+        body.extend(rvf_wire::writer::write_segment(
+            0x01,
+            &[],
+            F::empty(),
+            i + 1,
+        ));
     }
-    let b = StreamDescriptorBuilder::new(FILE_ID, key(1)).chunk_log2(12).build(&body).unwrap();
+    let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
     let keys = [pk(1)];
     let mut pol = StreamPolicy::new(&keys);
     pol.max_descriptor_bytes = b.descriptor.len();
     let (r, peak) = peak_of(|| decode_descriptor(&b.descriptor, &pol));
     assert!(r.is_ok());
-    assert!(peak <= pol.descriptor_alloc_bound(), "peak {peak} bound {}", pol.descriptor_alloc_bound());
-    assert!(peak <= 2 * b.descriptor.len() + 4096, "peak {peak} for a {} B descriptor", b.descriptor.len());
+    assert!(
+        peak <= pol.descriptor_alloc_bound(),
+        "peak {peak} bound {}",
+        pol.descriptor_alloc_bound()
+    );
+    assert!(
+        peak <= 2 * b.descriptor.len() + 4096,
+        "peak {peak} for a {} B descriptor",
+        b.descriptor.len()
+    );
 }
 
 #[test]
@@ -114,12 +168,17 @@ fn p7_declared_huge_segments_and_lying_frames_allocate_nothing_proportional() {
     let keys = [pk(1)];
     // A signed 1 TiB segment is a policy question, not an allocation: with the cap raised the
     // descriptor is accepted and the verifier still allocates only per-segment state.
-    let b = StreamDescriptorBuilder::new(FILE_ID, key(1)).chunk_log2(12).build(&body).unwrap();
+    let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
     let d = resign(&b, &key(1), |es, h| {
         let extra = (1u64 << 40) - es[0].stored_len;
         es[0].stored_len += extra;
         h.body_len += extra;
-        for e in es.iter_mut().skip(1) { e.body_offset += extra; }
+        for e in es.iter_mut().skip(1) {
+            e.body_offset += extra;
+        }
         h.flags &= !rvf_types::stream::STREAM_FLAG_IDENTITY_PRESENT;
         h.rvf_identity = [0; 32];
     });
@@ -153,7 +212,10 @@ fn p7_whole_stream_peak_is_descriptor_plus_one_frame_plus_tables() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let body = sample_body(4);
     let keys = [pk(1)];
-    let b = StreamDescriptorBuilder::new(FILE_ID, key(1)).chunk_log2(12).build(&body).unwrap();
+    let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
     let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
     let bytes: Vec<u8> = frames.iter().flatten().copied().collect();
     let pol = StreamPolicy::new(&keys);
@@ -166,9 +228,16 @@ fn p7_whole_stream_peak_is_descriptor_plus_one_frame_plus_tables() {
         v.state()
     });
     assert_eq!(state, StreamState::Complete);
-    let max_table: usize = b.entries.iter().map(|e| 32 * b.header.chunk_count(e.stored_len).unwrap() as usize).max().unwrap();
+    let max_table: usize = b
+        .entries
+        .iter()
+        .map(|e| 32 * b.header.chunk_count(e.stored_len).unwrap() as usize)
+        .max()
+        .unwrap();
     let bound = pol.descriptor_alloc_bound() + 2 * (4096 + 17) + max_table + 64 * 1024;
     assert!(peak <= bound, "peak {peak} bound {bound}");
-    eprintln!("whole-stream peak {peak} B (bound {bound}, body {} B)", body.len());
+    eprintln!(
+        "whole-stream peak {peak} B (bound {bound}, body {} B)",
+        body.len()
+    );
 }
-

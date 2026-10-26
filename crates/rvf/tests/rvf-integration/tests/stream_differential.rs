@@ -32,7 +32,11 @@ fn whole_body_accepts(b: &StreamBundle, body: &[u8]) -> bool {
             .enumerate()
             .map(|(i, c)| leaf_hash(&h.file_id, e.seg_id, i as u32, c))
             .collect();
-        let commit = if leaves.len() == 1 { leaves[0] } else { chunk_list_hash(&h.file_id, e.seg_id, &leaves) };
+        let commit = if leaves.len() == 1 {
+            leaves[0]
+        } else {
+            chunk_list_hash(&h.file_id, e.seg_id, &leaves)
+        };
         if commit != e.chunk_table_hash {
             return false;
         }
@@ -69,7 +73,10 @@ fn stream_accepts(body: &[u8], frames: impl Iterator<Item = Vec<u8>>) -> bool {
 
 fn check(name: &str, pristine: &[u8], log2: u8) -> (usize, usize) {
     let n_stage_pat = |n: usize| (0..n).map(|i| (i % 4) as u8).collect::<Vec<_>>();
-    let file = StreamDescriptorBuilder::new(FILE_ID, key()).chunk_log2(log2).build(pristine).unwrap();
+    let file = StreamDescriptorBuilder::new(FILE_ID, key())
+        .chunk_log2(log2)
+        .build(pristine)
+        .unwrap();
     let stage = StreamDescriptorBuilder::new(FILE_ID, key())
         .chunk_log2(log2)
         .stages(&n_stage_pat(file.entries.len()))
@@ -78,7 +85,18 @@ fn check(name: &str, pristine: &[u8], log2: u8) -> (usize, usize) {
         .unwrap();
     let mut variants: Vec<(String, Vec<u8>)> = vec![("pristine".into(), pristine.to_vec())];
     let len = pristine.len();
-    let mut offs: Vec<usize> = vec![0, 5, 0x20, 0x28, 64, len / 3, len / 2, len - 1, len.saturating_sub(4096), len.saturating_sub(4000)];
+    let mut offs: Vec<usize> = vec![
+        0,
+        5,
+        0x20,
+        0x28,
+        64,
+        len / 3,
+        len / 2,
+        len - 1,
+        len.saturating_sub(4096),
+        len.saturating_sub(4000),
+    ];
     offs.extend(file.entries.iter().map(|e| e.body_offset as usize + 8));
     for o in offs {
         if o < len {
@@ -91,12 +109,22 @@ fn check(name: &str, pristine: &[u8], log2: u8) -> (usize, usize) {
     for (label, body) in &variants {
         let want = whole_body_accepts(&file, body);
         let got_file = stream_accepts(body, file.frames_file_order(body));
-        assert_eq!(want, got_file, "{name}/{label}: file order disagrees (whole={want})");
+        assert_eq!(
+            want, got_file,
+            "{name}/{label}: file order disagrees (whole={want})"
+        );
         let want_stage = whole_body_accepts(&stage, body);
         let got_stage = stream_accepts(body, stage.frames_stage_order(body));
-        assert_eq!(want_stage, got_stage, "{name}/{label}: stage order disagrees (whole={want_stage})");
+        assert_eq!(
+            want_stage, got_stage,
+            "{name}/{label}: stage order disagrees (whole={want_stage})"
+        );
         assert_eq!(want, want_stage);
-        if want { acc += 1 } else { rej += 1 }
+        if want {
+            acc += 1
+        } else {
+            rej += 1
+        }
     }
     (acc, rej)
 }
@@ -105,15 +133,29 @@ fn synthetic() -> Vec<(String, Vec<u8>)> {
     use rvf_types::SegmentFlags as F;
     use rvf_wire::writer::write_segment_with_algo;
     let mut out = Vec::new();
-    for (i, sizes) in [vec![0usize], vec![100, 5000, 70000], vec![1, 2, 3, 4, 5, 6, 7, 8], vec![200_000]].into_iter().enumerate() {
+    for (i, sizes) in [
+        vec![0usize],
+        vec![100, 5000, 70000],
+        vec![1, 2, 3, 4, 5, 6, 7, 8],
+        vec![200_000],
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let mut b = Vec::new();
         for (j, s) in sizes.iter().enumerate() {
             let p: Vec<u8> = (0..*s).map(|k| (k * 31 + j * 7 + i) as u8).collect();
             let ty = if j % 3 == 0 { 0x10 } else { 0x01 };
             let algo = if ty == 0x10 || j % 2 == 0 { 2 } else { 1 };
-            b.extend(write_segment_with_algo(ty, &p, F::empty(), j as u64 + 1, algo));
+            b.extend(write_segment_with_algo(
+                ty,
+                &p,
+                F::empty(),
+                j as u64 + 1,
+                algo,
+            ));
         }
-        
+
         out.push((format!("synthetic-{i}"), b));
     }
     // an executable that relies on a non-cryptographic checksum: both sides must reject it
@@ -126,7 +168,10 @@ fn forge() -> Vec<(String, Vec<u8>)> {
     use rvf_forge_core::{CapabilityClass, ContainerBuilder};
     use rvf_types::SegmentType;
     let sk = SigningKey::from_bytes(&[3u8; 32]);
-    let a = ContainerBuilder::new().file_id(*b"forge-corpus-01!").build().unwrap();
+    let a = ContainerBuilder::new()
+        .file_id(*b"forge-corpus-01!")
+        .build()
+        .unwrap();
     let b = ContainerBuilder::new()
         .file_id(*b"forge-corpus-02!")
         .declare_capability(CapabilityClass::Network)
@@ -135,7 +180,10 @@ fn forge() -> Vec<(String, Vec<u8>)> {
         .sign_with(sk)
         .build()
         .unwrap();
-    vec![("forge-minimal".into(), a.bytes), ("forge-signed-wasm".into(), b.bytes)]
+    vec![
+        ("forge-minimal".into(), a.bytes),
+        ("forge-signed-wasm".into(), b.bytes),
+    ]
 }
 
 fn runtime_store() -> Option<(String, Vec<u8>)> {
@@ -143,13 +191,25 @@ fn runtime_store() -> Option<(String, Vec<u8>)> {
     use rvf_runtime::RvfStore;
     let dir = tempfile::TempDir::new().ok()?;
     let path = dir.path().join("c.rvf");
-    let mut s = RvfStore::create(&path, RvfOptions { dimension: 16, metric: DistanceMetric::L2, ..Default::default() }).ok()?;
-    let vs: Vec<Vec<f32>> = (0..64).map(|i| (0..16).map(|k| ((i * 16 + k) % 13) as f32 / 13.0).collect()).collect();
+    let mut s = RvfStore::create(
+        &path,
+        RvfOptions {
+            dimension: 16,
+            metric: DistanceMetric::L2,
+            ..Default::default()
+        },
+    )
+    .ok()?;
+    let vs: Vec<Vec<f32>> = (0..64)
+        .map(|i| (0..16).map(|k| ((i * 16 + k) % 13) as f32 / 13.0).collect())
+        .collect();
     let refs: Vec<&[f32]> = vs.iter().map(|v| v.as_slice()).collect();
     let ids: Vec<u64> = (1..=64).collect();
     s.ingest_batch(&refs, &ids, None).ok()?;
     s.close().ok()?;
-    std::fs::read(&path).ok().map(|b| ("rvf-runtime-store".into(), b))
+    std::fs::read(&path)
+        .ok()
+        .map(|b| ("rvf-runtime-store".into(), b))
 }
 
 #[test]
@@ -165,7 +225,9 @@ fn stream_verifier_agrees_with_whole_body_verification() {
         for log2 in [0xFFu8, 12, 16] {
             // A body the descriptor builder cannot segment (see ADR-354 dialect issues) is
             // reported, not silently skipped.
-            let probe = StreamDescriptorBuilder::new(FILE_ID, key()).chunk_log2(log2).build(body);
+            let probe = StreamDescriptorBuilder::new(FILE_ID, key())
+                .chunk_log2(log2)
+                .build(body);
             match probe {
                 Ok(_) => {
                     let (a, r) = check(name, body, log2);
@@ -178,7 +240,9 @@ fn stream_verifier_agrees_with_whole_body_verification() {
     for s in &stats {
         eprintln!("{s}");
     }
-    assert!(stats.iter().any(|s| s.contains("accepted") && !s.contains("accepted 0")));
+    assert!(stats
+        .iter()
+        .any(|s| s.contains("accepted") && !s.contains("accepted 0")));
     assert!(stats.iter().any(|s| !s.contains("rejected 0")));
     assert!(stats.iter().filter(|s| s.contains("accepted")).count() >= 12);
     assert!(stats.iter().any(|s| s.starts_with("forge-signed-wasm")));

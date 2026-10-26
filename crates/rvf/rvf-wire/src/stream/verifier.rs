@@ -11,8 +11,9 @@ use super::frame::{FRAME_CHUNK, FRAME_CHUNK_TABLE, FRAME_DESCRIPTOR};
 use super::{decode_descriptor, StreamPolicy, VerifiedDescriptor};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use rvf_crypto::StreamSha256 as Sha256;
 use rvf_crypto::{chunk_list_hash_flat, leaf_hash};
-use rvf_types::sha256::{ct_eq, Sha256};
+use rvf_types::sha256::ct_eq;
 use rvf_types::stream::*;
 use rvf_types::{ErrorCode, SEGMENT_MAGIC};
 

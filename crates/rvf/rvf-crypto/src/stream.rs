@@ -1,9 +1,44 @@
 //! RVSD (ADR-353) hashing and signing: leaf and chunk-list commitments, the
 //! signer key id, and descriptor signatures.
 //!
-//! SHA-256 comes from `rvf_types::sha256` (no extra dependency).
+//! SHA-256 is `rvf_types::sha256` by default (no extra dependency) or the `sha2`
+//! crate under the `fast-sha256` feature (about 6x faster with SHA extensions).
 
-use rvf_types::sha256::{sha256, Sha256};
+/// SHA-256 backend: `sha2` with runtime CPU detection under `fast-sha256`,
+/// otherwise the portable `rvf_types::sha256`. Outputs are identical.
+#[cfg(feature = "fast-sha256")]
+mod backend {
+    use sha2::Digest;
+
+    /// Streaming SHA-256.
+    #[derive(Clone, Default)]
+    pub struct Sha256(sha2::Sha256);
+
+    impl Sha256 {
+        /// New hasher.
+        pub fn new() -> Self {
+            Self(sha2::Sha256::new())
+        }
+        /// Absorb bytes.
+        pub fn update(&mut self, data: &[u8]) {
+            self.0.update(data);
+        }
+        /// Finish.
+        pub fn finalize(self) -> [u8; 32] {
+            self.0.finalize().into()
+        }
+    }
+
+    /// One-shot SHA-256.
+    pub fn sha256(data: &[u8]) -> [u8; 32] {
+        sha2::Sha256::digest(data).into()
+    }
+}
+#[cfg(not(feature = "fast-sha256"))]
+mod backend {
+    pub use rvf_types::sha256::{sha256, Sha256};
+}
+pub use backend::{sha256, Sha256};
 
 /// Domain tag of a chunk leaf.
 pub const LEAF_TAG: u8 = 0x00;

@@ -15,7 +15,13 @@ struct Fix {
 fn small_body() -> Vec<u8> {
     use rvf_types::SegmentFlags as F;
     let mut b = rvf_wire::writer::write_segment(0x07, &payload(1, 100), F::empty(), 1);
-    b.extend(rvf_wire::writer::write_segment_with_algo(0x10, &payload(2, 5000), F::empty(), 2, 2));
+    b.extend(rvf_wire::writer::write_segment_with_algo(
+        0x10,
+        &payload(2, 5000),
+        F::empty(),
+        2,
+        2,
+    ));
     b.extend(root_page());
     b
 }
@@ -24,9 +30,16 @@ fn fix() -> &'static Fix {
     static F: OnceLock<Fix> = OnceLock::new();
     F.get_or_init(|| {
         let body = small_body();
-        let b = StreamDescriptorBuilder::new(FILE_ID, key(1)).chunk_log2(12).build(&body).unwrap();
+        let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+            .chunk_log2(12)
+            .build(&body)
+            .unwrap();
         let frames = b.frames_file_order(&body).collect();
-        Fix { body, frames, keys: vec![pk(1)] }
+        Fix {
+            body,
+            frames,
+            keys: vec![pk(1)],
+        }
     })
 }
 
@@ -37,15 +50,29 @@ fn pol(f: &Fix, budget: u32) -> StreamPolicy<'_> {
 }
 
 /// Bytes assembled from released chunks; panics if any chunk differs from the body.
-fn check_released(f: &Fix, v: &mut StreamVerifier, frames: &[Vec<u8>]) -> (u64, Option<IdentityStatus>) {
+fn check_released(
+    f: &Fix,
+    v: &mut StreamVerifier,
+    frames: &[Vec<u8>],
+) -> (u64, Option<IdentityStatus>) {
     let mut seen = std::collections::HashSet::new();
     let mut total = 0u64;
     let mut complete = None;
     for fr in frames {
-        if let Ok(Event::Chunk { chunk, complete: c, .. }) = v.push(fr) {
+        if let Ok(Event::Chunk {
+            chunk, complete: c, ..
+        }) = v.push(fr)
+        {
             let o = chunk.body_offset as usize;
-            assert_eq!(&f.body[o..o + chunk.bytes.len()], chunk.bytes, "released bytes differ from the signed body");
-            assert!(seen.insert((chunk.seg_id, chunk.chunk_index)), "chunk released twice");
+            assert_eq!(
+                &f.body[o..o + chunk.bytes.len()],
+                chunk.bytes,
+                "released bytes differ from the signed body"
+            );
+            assert!(
+                seen.insert((chunk.seg_id, chunk.chunk_index)),
+                "chunk released twice"
+            );
             total += chunk.bytes.len() as u64;
             complete = complete.or(c);
         }
@@ -69,7 +96,11 @@ fn op() -> impl Strategy<Value = Op> {
         any::<usize>().prop_map(Op::Drop),
         any::<usize>().prop_map(Op::Dup),
         (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Swap(a, b)),
-        (any::<usize>(), proptest::collection::vec(any::<u8>(), 0..64)).prop_map(|(a, b)| Op::Insert(a, b)),
+        (
+            any::<usize>(),
+            proptest::collection::vec(any::<u8>(), 0..64)
+        )
+            .prop_map(|(a, b)| Op::Insert(a, b)),
         (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Cut(a, b)),
     ]
 }
@@ -81,7 +112,9 @@ fn apply(mut fr: Vec<Vec<u8>>, ops: &[Op]) -> Vec<Vec<u8>> {
             Op::Flip(a, b, m) if !fr.is_empty() => {
                 let f = &mut fr[a % n];
                 let l = f.len();
-                f[b % l] ^= m;
+                if l > 0 {
+                    f[b % l] ^= m;
+                }
             }
             Op::Drop(a) if !fr.is_empty() => {
                 fr.remove(a % n);
@@ -152,7 +185,9 @@ fn run_reader(f: &Fix, parts: &[&[u8]]) -> Verdict {
     let (mut rel, mut errs) = (vec![], vec![]);
     for p in parts {
         let _ = rd.feed(&mut v, p, &mut |r| match r {
-            Ok(Event::Chunk { chunk, .. }) => rel.push((chunk.seg_id, chunk.chunk_index, chunk.bytes.to_vec())),
+            Ok(Event::Chunk { chunk, .. }) => {
+                rel.push((chunk.seg_id, chunk.chunk_index, chunk.bytes.to_vec()))
+            }
             Ok(_) => {}
             Err(e) => errs.push(e),
         });
@@ -181,9 +216,14 @@ fn p3_truncation_at_every_byte_offset() {
     let mut v = StreamVerifier::new(pol(f, 4));
     let mut rd = FrameReader::new();
     for (k, b) in bytes.iter().enumerate() {
-        rd.feed(&mut v, std::slice::from_ref(b), &mut |_| {}).unwrap();
+        rd.feed(&mut v, std::slice::from_ref(b), &mut |_| {})
+            .unwrap();
         let last = k + 1 == bytes.len();
-        assert_eq!(v.state() == StreamState::Complete, last, "Complete at offset {k}");
+        assert_eq!(
+            v.state() == StreamState::Complete,
+            last,
+            "Complete at offset {k}"
+        );
     }
     for k in (0..bytes.len()).step_by(211) {
         let mut v = StreamVerifier::new(pol(f, 4));
@@ -215,7 +255,11 @@ fn p2_every_bit_flip_in_every_frame_is_refused() {
             for g in &f.frames[i + 1..] {
                 let _ = v.push(g);
             }
-            assert_ne!(v.state(), StreamState::Complete, "flip {bit} in frame {i} still completed");
+            assert_ne!(
+                v.state(),
+                StreamState::Complete,
+                "flip {bit} in frame {i} still completed"
+            );
         }
     }
 }

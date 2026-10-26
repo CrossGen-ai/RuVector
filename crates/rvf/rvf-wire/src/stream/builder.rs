@@ -5,8 +5,8 @@ use super::frame::{chunk_frame, descriptor_frame, table_frame};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use ed25519_dalek::SigningKey;
+use rvf_crypto::stream_sha256 as sha256;
 use rvf_crypto::{chunk_list_hash, descriptor_hash, leaf_hash, sign_descriptor, signer_key_id};
-use rvf_types::sha256::sha256;
 use rvf_types::stream::*;
 use rvf_types::{ErrorCode, ROOT_MANIFEST_MAGIC_BYTES, ROOT_MANIFEST_SIZE, SEGMENT_HEADER_SIZE};
 
