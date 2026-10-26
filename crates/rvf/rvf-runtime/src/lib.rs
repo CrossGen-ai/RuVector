@@ -35,6 +35,7 @@ pub mod qr_encode;
 pub mod qr_seed;
 mod rabitq_path;
 pub mod read_path;
+pub mod root_page;
 pub mod safety_net;
 pub mod seed_crypto;
 pub mod status;

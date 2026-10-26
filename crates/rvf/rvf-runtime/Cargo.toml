@@ -12,7 +12,7 @@ keywords = ["vector", "database", "storage", "compaction", "rvf"]
 rust-version = "1.87"
 
 [features]
-default = ["std"]
+default = ["std", "ed25519"]
 std = []
 wasm = []
 qr = []
@@ -22,6 +22,8 @@ ed25519 = ["rvf-types/ed25519"]
 rvf-types = { version = "0.2.0", path = "../rvf-types", features = ["std"] }
 rvf-index = { version = "0.2.0", path = "../rvf-index", features = ["std"] }
 rvf-quant = { version = "0.2.0", path = "../rvf-quant", features = ["std"] }
+rvf-wire = { version = "0.1.0", path = "../rvf-wire" }
+log = "0.4"
 crc32fast = "1"
 
 [dev-dependencies]
