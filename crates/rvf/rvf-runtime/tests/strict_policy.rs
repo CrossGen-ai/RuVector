@@ -1,3 +1,4 @@
+#![cfg(feature = "ed25519")]
 //! ADR-354 item 5 / ADR-033 sections 3.5 and 4: `Strict` is real.
 //!
 //! Runs against the real `RvfStore::create_signed` / `open_with_policy`, not a

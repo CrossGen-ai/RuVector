@@ -1,3 +1,4 @@
+#![cfg(feature = "ed25519")]
 //! ADR-354 item 6 (ruvector side): shared byte fixtures in
 //! `crates/rvf/tests/vectors/`, consumed by the rvm repo.
 //!
