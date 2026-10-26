@@ -186,7 +186,6 @@ fn check_signed_root(
     }
     // The page is authentic. Now bind it to the manifest we are about to use.
     if located.mode != rvf_wire::tail_scan::ScanMode::Aligned
-        || located.manifest.dialect != write_path::MANIFEST_DIALECT_WIRE
         || located.header.checksum_algo != crate::hashing::ALGO_SHAKE256_128
     {
         return Err(invalid("legacy_dialect"));
@@ -276,7 +275,7 @@ impl RvfStore {
 
     /// True if any legacy-dialect (pre ADR-354) layout was encountered:
     /// unpadded segments, a CRC-rotation hash labelled `checksum_algo = 0`, or
-    /// a manifest without the wire-dialect marker. Under `Strict` a legacy
+    /// a MANIFEST segment stamped `checksum_algo = 0`. Under `Strict` a legacy
     /// file never opens, so this is mainly an audit/migration signal.
     pub fn legacy_dialect(&self) -> bool {
         self.security.legacy_dialect.load(Ordering::Relaxed)
@@ -357,7 +356,7 @@ impl RvfStore {
     ) -> Result<(), RvfError> {
         let manifest = &located.manifest;
         if located.mode == rvf_wire::tail_scan::ScanMode::ByteGranular
-            || manifest.dialect != write_path::MANIFEST_DIALECT_WIRE
+            || located.header.checksum_algo == 0
             || manifest
                 .segment_dir
                 .iter()

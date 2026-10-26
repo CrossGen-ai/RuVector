@@ -19,7 +19,7 @@ fn manifest_payload(epoch: u32, dim: u16) -> Vec<u8> {
     p.extend_from_slice(&dim.to_le_bytes());
     p.extend_from_slice(&0u64.to_le_bytes()); // total vectors
     p.extend_from_slice(&0u32.to_le_bytes()); // seg_count
-    p.extend_from_slice(&[0, 0, 1, 0]); // profile, metric, dialect, reserved
+    p.extend_from_slice(&[0, 0, 0, 0]); // profile, metric, reserved
     p.extend_from_slice(&0u32.to_le_bytes()); // deleted count
     p
 }

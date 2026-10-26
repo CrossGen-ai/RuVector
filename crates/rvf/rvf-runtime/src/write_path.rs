@@ -13,13 +13,6 @@ use rvf_wire::writer::calculate_padded_size;
 use std::collections::BTreeMap;
 use std::io::{self, Seek, Write};
 
-/// Manifest-header byte [20]: dialect marker. 0 (the historical reserved
-/// zero) means a legacy-dialect writer; 1 means the wire dialect (64-byte
-/// padded segments, `rvf-wire` checksum registry). This is the on-disk
-/// "format version" ADR-354 / `hashing.rs` call for: older readers ignore the
-/// byte, newer readers use it to label the file.
-pub(crate) const MANIFEST_DIALECT_WIRE: u8 = 1;
-
 /// Marker ("SHDG") of the optional per-segment hash trailer appended to the
 /// manifest payload by signed stores: `count:u32` then `count` entries of
 /// `segment_id:u64 || content_hash:[u8;16]`. Old readers stop before it.
@@ -295,15 +288,17 @@ impl SegmentWriter {
 
         // Manifest header.
         // Layout: epoch[0..4] | dim[4..6] | total_vecs[6..14] | seg_count[14..18]
-        //         | profile_id[18] | metric_id[19] | dialect[20] | reserved[21]
+        //         | profile_id[18] | metric_id[19] | reserved[20..22]
         payload.extend_from_slice(&epoch.to_le_bytes());
         payload.extend_from_slice(&dimension.to_le_bytes());
         payload.extend_from_slice(&total_vectors.to_le_bytes());
         payload.extend_from_slice(&seg_count.to_le_bytes());
         payload.push(profile_id);
         payload.push(metric_id); // byte [19]: distance metric identifier
-        payload.push(MANIFEST_DIALECT_WIRE); // byte [20]: dialect marker (0 = legacy)
-        payload.push(0); // byte [21]: reserved
+                                 // Bytes [20..22] stay zero: strict third-party validators (e.g. the
+                                 // edge registry's) reject non-zero reserved header bytes. The dialect
+                                 // is carried by the segment header instead (`checksum_algo` != 0).
+        payload.extend_from_slice(&[0u8; 2]);
 
         // Segment directory.
         for &(sid, off, plen, stype) in segment_dir {

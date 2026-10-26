@@ -45,8 +45,6 @@ pub(crate) struct ParsedManifest {
     pub segment_dir: Vec<SegDirEntry>,
     pub deleted_ids: Vec<u64>,
     pub file_identity: Option<FileIdentity>,
-    /// Manifest-header byte [20]: 0 = legacy-dialect writer, 1 = wire dialect.
-    pub dialect: u8,
     /// Per-segment committed hashes (signed stores only): `(segment_id, hash)`.
     pub seg_hashes: Option<Vec<(u64, [u8; 16])>>,
 }
@@ -244,8 +242,6 @@ fn parse_manifest_payload(payload: &[u8]) -> Option<ParsedManifest> {
     ]);
     let seg_count = u32::from_le_bytes([payload[14], payload[15], payload[16], payload[17]]);
     let profile_id = payload[18];
-    // Byte [20]: dialect marker (0 = legacy writer, 1 = wire dialect).
-    let dialect = payload[20];
     // Byte [19] encodes the distance metric (was reserved zero in older stores).
     // DistanceMetric::from_id(0) == L2, so old stores boot correctly.
     let metric = DistanceMetric::from_id(payload[19]);
@@ -397,7 +393,6 @@ fn parse_manifest_payload(payload: &[u8]) -> Option<ParsedManifest> {
         segment_dir,
         deleted_ids,
         file_identity,
-        dialect,
         seg_hashes,
     })
 }
