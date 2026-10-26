@@ -1,0 +1,494 @@
+//! The receiver state machine (ADR-353 sections 5 and 6).
+//!
+//! `push` takes one complete frame. Nothing is buffered here: the released
+//! [`VerifiedChunk`] borrows the frame the caller passed, which has been hashed
+//! in place. Memory held between calls is the descriptor, one small state
+//! record per segment, and the leaf list of each segment whose chunk table was
+//! accepted but which is not yet fully verified. All are bounded by the policy
+//! (descriptor size cap, per-segment size cap), never by a declared frame size.
+
+use super::frame::{FRAME_CHUNK, FRAME_CHUNK_TABLE, FRAME_DESCRIPTOR};
+use super::{decode_descriptor, StreamPolicy, VerifiedDescriptor};
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use rvf_crypto::{chunk_list_hash_flat, leaf_hash};
+use rvf_types::sha256::{ct_eq, Sha256};
+use rvf_types::stream::*;
+use rvf_types::{ErrorCode, SEGMENT_MAGIC};
+
+extern crate alloc;
+
+/// Receiver state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamState {
+    /// Waiting for the descriptor frame.
+    AwaitDescriptor,
+    /// Descriptor verified; chunks are being accepted.
+    Receiving,
+    /// Input ended early; `resume` continues at chunk granularity.
+    Suspended,
+    /// Every segment verified and the byte count matches.
+    Complete,
+    /// The descriptor was refused (terminal).
+    Rejected(ErrorCode),
+    /// Terminal failure: revoke, terminate, drop layers.
+    Poisoned(ErrorCode),
+}
+
+/// Outcome of the whole-body identity check at completion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityStatus {
+    /// SHA-256 over the verified bytes in file order equals `rvf_identity`.
+    Verified,
+    /// Chunks did not arrive in file order; see [`StreamVerifier::finish_identity`].
+    Unverifiable,
+    /// The descriptor carries no identity (`identity_present` clear).
+    NotPresent,
+}
+
+/// A chunk whose leaf hash matched and whose required stages are verified.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerifiedChunk<'a> {
+    /// Segment id.
+    pub seg_id: u64,
+    /// Chunk index within the segment.
+    pub chunk_index: u32,
+    /// Offset of the first byte in the body.
+    pub body_offset: u64,
+    /// The verified bytes.
+    pub bytes: &'a [u8],
+}
+
+/// Result of accepting one frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Event<'a> {
+    /// Descriptor accepted.
+    DescriptorVerified {
+        /// SHA-256 of the signed descriptor.
+        descriptor_hash: [u8; 32],
+        /// Number of segments.
+        seg_count: u32,
+        /// Total body bytes.
+        body_len: u64,
+    },
+    /// A chunk table matched its commitment.
+    TableVerified {
+        /// Segment id.
+        seg_id: u64,
+    },
+    /// A chunk was released.
+    Chunk {
+        /// The released bytes.
+        chunk: VerifiedChunk<'a>,
+        /// This chunk completed its segment.
+        segment_verified: bool,
+        /// This chunk completed its stage.
+        stage_verified: Option<u8>,
+        /// Set when this chunk completed the stream.
+        complete: Option<IdentityStatus>,
+    },
+}
+
+struct SegState {
+    n: u32,
+    next: u32,
+    leaves: Option<Vec<u8>>,
+    done: bool,
+}
+
+struct IdentityTracker {
+    hasher: Sha256,
+    pos: u64,
+    feasible: bool,
+}
+
+/// Verifies a stream of frames against a signed descriptor.
+pub struct StreamVerifier<'p> {
+    policy: StreamPolicy<'p>,
+    state: StreamState,
+    desc: Option<VerifiedDescriptor>,
+    segs: Vec<SegState>,
+    index: BTreeMap<u64, usize>,
+    stage_remaining: [u32; STREAM_MAX_STAGES as usize],
+    left: usize,
+    faults: u32,
+    verified_bytes: u64,
+    identity: Option<IdentityTracker>,
+    identity_status: Option<IdentityStatus>,
+    max_chunk_len: u64,
+    max_table_payload: u64,
+}
+
+fn rd32(b: &[u8], o: usize) -> u32 {
+    u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+fn rd64(b: &[u8], o: usize) -> u64 {
+    let mut a = [0u8; 8];
+    a.copy_from_slice(&b[o..o + 8]);
+    u64::from_le_bytes(a)
+}
+
+impl<'p> StreamVerifier<'p> {
+    /// A verifier waiting for the descriptor frame.
+    pub fn new(policy: StreamPolicy<'p>) -> Self {
+        Self {
+            policy,
+            state: StreamState::AwaitDescriptor,
+            desc: None,
+            segs: Vec::new(),
+            index: BTreeMap::new(),
+            stage_remaining: [0; STREAM_MAX_STAGES as usize],
+            left: 0,
+            faults: 0,
+            verified_bytes: 0,
+            identity: None,
+            identity_status: None,
+            max_chunk_len: 0,
+            max_table_payload: 0,
+        }
+    }
+
+    /// A verifier for a descriptor delivered out of band (sidecar or package
+    /// contract). Returns `Rejected` details as `Err`.
+    pub fn from_descriptor(bytes: &[u8], policy: StreamPolicy<'p>) -> Result<Self, ErrorCode> {
+        let mut v = Self::new(policy);
+        v.install(bytes)?;
+        Ok(v)
+    }
+
+    /// Current state.
+    pub fn state(&self) -> StreamState {
+        self.state
+    }
+
+    /// Counted faults so far.
+    pub fn faults(&self) -> u32 {
+        self.faults
+    }
+
+    /// Bytes released so far.
+    pub fn verified_bytes(&self) -> u64 {
+        self.verified_bytes
+    }
+
+    /// The verified descriptor, once accepted.
+    pub fn descriptor(&self) -> Option<&VerifiedDescriptor> {
+        self.desc.as_ref()
+    }
+
+    /// Identity status recorded at completion.
+    pub fn identity_status(&self) -> Option<IdentityStatus> {
+        self.identity_status
+    }
+
+    /// Next chunk index expected for a segment (`None` if unknown or done).
+    pub fn next_chunk(&self, seg_id: u64) -> Option<u32> {
+        let s = &self.segs[*self.index.get(&seg_id)?];
+        (!s.done).then_some(s.next)
+    }
+
+    /// Largest payload a frame of this type may declare (0 = nothing legal).
+    pub fn frame_payload_limit(&self, frame_type: u8) -> Option<u64> {
+        match frame_type {
+            FRAME_DESCRIPTOR => Some(self.policy.max_descriptor_bytes as u64),
+            FRAME_CHUNK => Some(self.max_chunk_len),
+            FRAME_CHUNK_TABLE => Some(self.max_table_payload),
+            _ => None,
+        }
+    }
+
+    /// Terminal failure; used by the frame reader for size lies.
+    pub fn poison(&mut self, code: ErrorCode) -> ErrorCode {
+        if !matches!(self.state, StreamState::Rejected(_)) {
+            self.state = StreamState::Poisoned(code);
+        }
+        code
+    }
+
+    /// Input ended before `Complete`: move to `Suspended`.
+    pub fn end_of_input(&mut self) -> StreamState {
+        if self.state == StreamState::Receiving {
+            self.state = StreamState::Suspended;
+        }
+        self.state
+    }
+
+    /// Continue after `Suspended`; progress is kept at chunk granularity.
+    pub fn resume(&mut self) -> bool {
+        if self.state == StreamState::Suspended {
+            self.state = StreamState::Receiving;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn fault(&mut self, code: ErrorCode) -> ErrorCode {
+        self.faults += 1;
+        if self.faults > self.policy.fault_budget {
+            self.state = StreamState::Poisoned(code);
+        }
+        code
+    }
+
+    fn install(&mut self, bytes: &[u8]) -> Result<Event<'static>, ErrorCode> {
+        let d = match decode_descriptor(bytes, &self.policy) {
+            Ok(d) => d,
+            Err(e) => {
+                self.state = StreamState::Rejected(e);
+                return Err(e);
+            }
+        };
+        let h = d.header;
+        for (i, e) in d.entries.iter().enumerate() {
+            // `n` is derived from the signed stored_len; the descriptor
+            // decoder already proved it fits a u32.
+            let n = h.chunk_count(e.stored_len).unwrap_or(1);
+            self.index.insert(e.seg_id, i);
+            self.segs.push(SegState {
+                n,
+                next: 0,
+                leaves: None,
+                done: false,
+            });
+            self.stage_remaining[e.stage as usize] += 1;
+            let first = h.chunk_len(e.stored_len, 0).unwrap_or(0);
+            self.max_chunk_len = self.max_chunk_len.max(first);
+            if n > 1 {
+                self.max_table_payload = self.max_table_payload.max(32 * n as u64);
+            }
+        }
+        self.left = d.entries.len();
+        if h.flags & STREAM_FLAG_IDENTITY_PRESENT != 0 {
+            self.identity = Some(IdentityTracker {
+                hasher: Sha256::new(),
+                pos: 0,
+                feasible: true,
+            });
+        }
+        let ev = Event::DescriptorVerified {
+            descriptor_hash: d.descriptor_hash,
+            seg_count: h.seg_count,
+            body_len: h.body_len,
+        };
+        self.desc = Some(d);
+        self.state = StreamState::Receiving;
+        Ok(ev)
+    }
+
+    /// Accept one complete frame.
+    ///
+    /// `Err` means the frame was refused: nothing was released, and the
+    /// expected next chunk did not advance. Whether the stream survived is in
+    /// [`state`](Self::state).
+    pub fn push<'a>(&mut self, frame: &'a [u8]) -> Result<Event<'a>, ErrorCode> {
+        match self.state {
+            StreamState::Poisoned(_) => return Err(ErrorCode::StreamPoisoned),
+            StreamState::AwaitDescriptor => {
+                if frame.len() < 5 || frame[0] != FRAME_DESCRIPTOR {
+                    return Err(self.poison(ErrorCode::StreamUnexpectedFrame));
+                }
+                if rd32(frame, 1) as usize != frame.len() - 5 {
+                    return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+                }
+                return self.install(&frame[5..]);
+            }
+            StreamState::Receiving => {}
+            _ => return Err(ErrorCode::StreamBadState),
+        }
+        match frame.first() {
+            Some(&FRAME_CHUNK) => self.on_chunk(frame),
+            Some(&FRAME_CHUNK_TABLE) => self.on_table(frame),
+            _ => Err(self.fault(ErrorCode::StreamUnexpectedFrame)),
+        }
+    }
+
+    fn on_table<'a>(&mut self, f: &'a [u8]) -> Result<Event<'a>, ErrorCode> {
+        if f.len() < 13 {
+            return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+        }
+        let (seg_id, n) = (rd64(f, 1), rd32(f, 9));
+        if (f.len() - 13) as u64 != 32 * n as u64 {
+            return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+        }
+        let Some(&i) = self.index.get(&seg_id) else {
+            return Err(self.fault(ErrorCode::StreamUnexpectedFrame));
+        };
+        let s = &self.segs[i];
+        if s.n <= 1 || s.leaves.is_some() || s.done {
+            return Err(self.fault(ErrorCode::StreamUnexpectedFrame));
+        }
+        if n != s.n {
+            return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+        }
+        let d = self.desc.as_ref().expect("descriptor installed");
+        let ok = chunk_list_hash_flat(&d.header.file_id, seg_id, &f[13..])
+            .is_some_and(|h| ct_eq(&h, &d.entries[i].chunk_table_hash));
+        if !ok {
+            return Err(self.fault(ErrorCode::StreamTableHashMismatch));
+        }
+        self.segs[i].leaves = Some(f[13..].to_vec());
+        Ok(Event::TableVerified { seg_id })
+    }
+
+    fn on_chunk<'a>(&mut self, f: &'a [u8]) -> Result<Event<'a>, ErrorCode> {
+        if f.len() < 17 {
+            return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+        }
+        let (seg_id, idx, len) = (rd64(f, 1), rd32(f, 9), rd32(f, 13));
+        let bytes = &f[17..];
+        if len as usize != bytes.len() {
+            return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+        }
+        let Some(&i) = self.index.get(&seg_id) else {
+            return Err(self.fault(ErrorCode::StreamUnexpectedFrame));
+        };
+        let (h, e) = {
+            let d = self.desc.as_ref().expect("descriptor installed");
+            (d.header, d.entries[i])
+        };
+        let s = &self.segs[i];
+        if s.done || idx != s.next {
+            return Err(self.fault(ErrorCode::StreamUnexpectedFrame));
+        }
+        if h.chunk_len(e.stored_len, idx) != Some(len as u64) {
+            return Err(self.poison(ErrorCode::StreamFrameSizeLie));
+        }
+        if s.n > 1 && s.leaves.is_none() {
+            return Err(self.fault(ErrorCode::StreamUnexpectedFrame));
+        }
+        let mut need = e.requires_mask;
+        while need != 0 {
+            let st = need.trailing_zeros() as usize;
+            need &= need - 1;
+            if self.stage_remaining[st] != 0 {
+                return Err(self.fault(ErrorCode::StreamRequirementsUnmet));
+            }
+        }
+        let leaf = leaf_hash(&h.file_id, seg_id, idx, bytes);
+        let want: &[u8] = match &s.leaves {
+            Some(l) => &l[idx as usize * 32..idx as usize * 32 + 32],
+            None => &e.chunk_table_hash,
+        };
+        let mut w = [0u8; 32];
+        w.copy_from_slice(want);
+        if !ct_eq(&leaf, &w) {
+            return Err(self.fault(ErrorCode::StreamChunkHashMismatch));
+        }
+        if idx == 0 && is_exec_or_index(e.seg_type) {
+            // Authenticated bytes, but an unauthenticated checksum claim must
+            // not feed an executor or index consumer (ADR-353 section 2.6).
+            let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            if magic != SEGMENT_MAGIC || bytes[5] != e.seg_type {
+                return Err(self.poison(ErrorCode::StreamTableInvalid));
+            }
+            if bytes[0x20] <= 1 {
+                return Err(self.poison(ErrorCode::StreamWeakChecksum));
+            }
+        }
+        let body_offset = e.body_offset + idx as u64 * h.chunk_size().unwrap_or(0);
+        if let Some(t) = &mut self.identity {
+            if t.feasible && t.pos == body_offset {
+                t.hasher.update(bytes);
+                t.pos += bytes.len() as u64;
+            } else {
+                t.feasible = false;
+            }
+        }
+        // Identity is checked before the final chunk is handed out, so a
+        // mismatch releases nothing from that chunk.
+        let mut segment_verified = false;
+        let mut stage_verified = None;
+        let mut complete = None;
+        let s = &mut self.segs[i];
+        s.next += 1;
+        if s.next == s.n {
+            s.done = true;
+            s.leaves = None;
+            segment_verified = true;
+            self.left -= 1;
+            let st = e.stage as usize;
+            self.stage_remaining[st] -= 1;
+            if self.stage_remaining[st] == 0 {
+                stage_verified = Some(e.stage);
+            }
+        }
+        self.verified_bytes += bytes.len() as u64;
+        if self.left == 0 {
+            match self.finish() {
+                Ok(st) => complete = Some(st),
+                Err(c) => return Err(self.poison(c)),
+            }
+        }
+        Ok(Event::Chunk {
+            chunk: VerifiedChunk {
+                seg_id,
+                chunk_index: idx,
+                body_offset,
+                bytes,
+            },
+            segment_verified,
+            stage_verified,
+            complete,
+        })
+    }
+
+    fn finish(&mut self) -> Result<IdentityStatus, ErrorCode> {
+        let h = self.desc.as_ref().expect("descriptor installed").header;
+        if self.verified_bytes != h.body_len {
+            return Err(ErrorCode::StreamTableInvalid);
+        }
+        let st = match self.identity.take() {
+            None => IdentityStatus::NotPresent,
+            Some(t) if t.feasible && t.pos == h.body_len => {
+                if !ct_eq(&t.hasher.finalize(), &h.rvf_identity) {
+                    return Err(ErrorCode::StreamIdentityMismatch);
+                }
+                IdentityStatus::Verified
+            }
+            Some(_) => IdentityStatus::Unverifiable,
+        };
+        self.identity_status = Some(st);
+        self.state = StreamState::Complete;
+        Ok(st)
+    }
+
+    /// For storage-capable consumers that received out of file order: re-read
+    /// the persisted body in file order (`read_at(offset, buf)` must fill
+    /// `buf` or return false) and check `SHA-256 == rvf_identity`. Uses a
+    /// 64 KiB buffer. Mismatch poisons the stream.
+    pub fn finish_identity(
+        &mut self,
+        mut read_at: impl FnMut(u64, &mut [u8]) -> bool,
+    ) -> Result<(), ErrorCode> {
+        if self.state != StreamState::Complete
+            || self.identity_status != Some(IdentityStatus::Unverifiable)
+        {
+            return Err(ErrorCode::StreamBadState);
+        }
+        let h = self.desc.as_ref().expect("descriptor installed").header;
+        let mut hasher = Sha256::new();
+        let mut buf = alloc::vec![0u8; 65536];
+        let mut pos = 0u64;
+        while pos < h.body_len {
+            let n = (h.body_len - pos).min(buf.len() as u64) as usize;
+            if !read_at(pos, &mut buf[..n]) {
+                return Err(ErrorCode::StreamBadState);
+            }
+            hasher.update(&buf[..n]);
+            pos += n as u64;
+        }
+        if !ct_eq(&hasher.finalize(), &h.rvf_identity) {
+            return Err(self.poison(ErrorCode::StreamIdentityMismatch));
+        }
+        self.identity_status = Some(IdentityStatus::Verified);
+        Ok(())
+    }
+}
+
+fn is_exec_or_index(seg_type: u8) -> bool {
+    matches!(
+        StreamClass::of(seg_type),
+        StreamClass::Executable | StreamClass::Index
+    )
+}

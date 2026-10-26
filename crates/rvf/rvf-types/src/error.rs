@@ -122,6 +122,48 @@ pub enum ErrorCode {
     EpochDriftExceeded = 0x0803,
     /// Level 1 manifest signature invalid (Paranoid mode).
     Level1InvalidSignature = 0x0804,
+    /// RVSD descriptor is shorter or longer than its fixed layout requires.
+    StreamDescriptorTruncated = 0x0805,
+    /// RVSD descriptor magic mismatch.
+    StreamBadMagic = 0x0806,
+    /// RVSD descriptor version is not supported.
+    StreamUnsupportedVersion = 0x0807,
+    /// RVSD descriptor has unknown flags, algorithms, chunk size or non-zero reserved bytes.
+    StreamBadFlags = 0x0808,
+    /// RVSD descriptor exceeds a receiver policy limit.
+    StreamLimitExceeded = 0x0809,
+    /// RVSD segment table violates an invariant (order, contiguity, uniqueness, sizes).
+    StreamTableInvalid = 0x080A,
+    /// RVSD descriptor signature does not verify.
+    StreamBadSignature = 0x080B,
+    /// RVSD descriptor epoch is lower than the pinned epoch (replay).
+    StreamStaleEpoch = 0x080C,
+    /// RVSD descriptor has the pinned epoch but different content.
+    StreamEpochConflict = 0x080D,
+    /// RVSD descriptor has expired.
+    StreamExpired = 0x080E,
+    /// RVSD descriptor policy hash differs from the expected policy hash.
+    StreamPolicyMismatch = 0x080F,
+    /// Stream chunk does not match its committed leaf hash.
+    StreamChunkHashMismatch = 0x0810,
+    /// Stream chunk table does not match the committed chunk table hash.
+    StreamTableHashMismatch = 0x0811,
+    /// Stream frame is a duplicate, out of order, unknown or malformed.
+    StreamUnexpectedFrame = 0x0812,
+    /// Stream frame declares a size that contradicts the signed descriptor.
+    StreamFrameSizeLie = 0x0813,
+    /// Chunk arrived before the stages named in its requires_mask were verified.
+    StreamRequirementsUnmet = 0x0814,
+    /// SHA-256 of the verified body differs from the signed rvf_identity.
+    StreamIdentityMismatch = 0x0815,
+    /// Executable or index segment uses a non-cryptographic checksum algorithm.
+    StreamWeakChecksum = 0x0816,
+    /// Stream is poisoned; no further frames are accepted.
+    StreamPoisoned = 0x0817,
+    /// Stream exceeded its fault budget.
+    StreamFaultBudgetExceeded = 0x0818,
+    /// Frame pushed in a state that cannot accept it.
+    StreamBadState = 0x0819,
 
     // ---- Category 0x09: Quality Errors (ADR-033) ----
     /// Query result quality is below threshold and AcceptDegraded not set.
@@ -245,6 +287,27 @@ impl TryFrom<u16> for ErrorCode {
             0x0802 => Ok(Self::UnknownSigner),
             0x0803 => Ok(Self::EpochDriftExceeded),
             0x0804 => Ok(Self::Level1InvalidSignature),
+            0x0805 => Ok(Self::StreamDescriptorTruncated),
+            0x0806 => Ok(Self::StreamBadMagic),
+            0x0807 => Ok(Self::StreamUnsupportedVersion),
+            0x0808 => Ok(Self::StreamBadFlags),
+            0x0809 => Ok(Self::StreamLimitExceeded),
+            0x080A => Ok(Self::StreamTableInvalid),
+            0x080B => Ok(Self::StreamBadSignature),
+            0x080C => Ok(Self::StreamStaleEpoch),
+            0x080D => Ok(Self::StreamEpochConflict),
+            0x080E => Ok(Self::StreamExpired),
+            0x080F => Ok(Self::StreamPolicyMismatch),
+            0x0810 => Ok(Self::StreamChunkHashMismatch),
+            0x0811 => Ok(Self::StreamTableHashMismatch),
+            0x0812 => Ok(Self::StreamUnexpectedFrame),
+            0x0813 => Ok(Self::StreamFrameSizeLie),
+            0x0814 => Ok(Self::StreamRequirementsUnmet),
+            0x0815 => Ok(Self::StreamIdentityMismatch),
+            0x0816 => Ok(Self::StreamWeakChecksum),
+            0x0817 => Ok(Self::StreamPoisoned),
+            0x0818 => Ok(Self::StreamFaultBudgetExceeded),
+            0x0819 => Ok(Self::StreamBadState),
 
             0x0900 => Ok(Self::QualityBelowThreshold),
             0x0901 => Ok(Self::BudgetTokensExhausted),
@@ -364,6 +427,27 @@ mod tests {
             (0x0802, ErrorCode::UnknownSigner),
             (0x0803, ErrorCode::EpochDriftExceeded),
             (0x0804, ErrorCode::Level1InvalidSignature),
+            (0x0805, ErrorCode::StreamDescriptorTruncated),
+            (0x0806, ErrorCode::StreamBadMagic),
+            (0x0807, ErrorCode::StreamUnsupportedVersion),
+            (0x0808, ErrorCode::StreamBadFlags),
+            (0x0809, ErrorCode::StreamLimitExceeded),
+            (0x080A, ErrorCode::StreamTableInvalid),
+            (0x080B, ErrorCode::StreamBadSignature),
+            (0x080C, ErrorCode::StreamStaleEpoch),
+            (0x080D, ErrorCode::StreamEpochConflict),
+            (0x080E, ErrorCode::StreamExpired),
+            (0x080F, ErrorCode::StreamPolicyMismatch),
+            (0x0810, ErrorCode::StreamChunkHashMismatch),
+            (0x0811, ErrorCode::StreamTableHashMismatch),
+            (0x0812, ErrorCode::StreamUnexpectedFrame),
+            (0x0813, ErrorCode::StreamFrameSizeLie),
+            (0x0814, ErrorCode::StreamRequirementsUnmet),
+            (0x0815, ErrorCode::StreamIdentityMismatch),
+            (0x0816, ErrorCode::StreamWeakChecksum),
+            (0x0817, ErrorCode::StreamPoisoned),
+            (0x0818, ErrorCode::StreamFaultBudgetExceeded),
+            (0x0819, ErrorCode::StreamBadState),
             (0x0900, ErrorCode::QualityBelowThreshold),
             (0x0901, ErrorCode::BudgetTokensExhausted),
             (0x0902, ErrorCode::QueryBlacklisted),
