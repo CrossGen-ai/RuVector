@@ -1,0 +1,240 @@
+//! A malicious mirror must never get unverified data published, must end the
+//! stream in a terminal or suspended state with the right reason, and must
+//! never panic the client. (HTTP-level lies about Content-Length / Range are
+//! exercised in rvf-server's tests.)
+
+#[path = "support/stream_fixture.rs"]
+mod fx;
+
+use fx::*;
+use rvf_runtime::progressive_stream::client::{ClientConfig, MemTransport, RunEnd, StreamClient};
+use rvf_runtime::progressive_stream::StreamWitness;
+use rvf_types::ErrorCode;
+use rvf_wire::stream::{EpochPin, StreamPolicy, StreamState};
+
+fn run_mirror<'p>(
+    f: &Fixture,
+    bytes: Vec<u8>,
+    policy: StreamPolicy<'p>,
+) -> (RunEnd, StreamClient<'p, MemTransport>) {
+    let mut c = StreamClient::new(
+        policy,
+        MemTransport::new(bytes),
+        ClientConfig {
+            max_stalls: 2,
+            frame_retries: 3,
+        },
+    );
+    let end = c.run(&mut |ing| assert_authentic(ing, &f.ds));
+    assert_authentic(&c.ingest, &f.ds);
+    (end, c)
+}
+
+fn not_complete(end: RunEnd, c: &StreamClient<'_, MemTransport>) {
+    assert_ne!(end, RunEnd::Complete);
+    assert_ne!(c.ingest.state(), StreamState::Complete);
+}
+
+#[test]
+fn truncation_at_many_offsets_never_completes() {
+    let f = fixture();
+    let keys = [f.public];
+    let full = frames(&f).concat();
+    for cut in [0, 7, 100, full.len() / 5, full.len() / 2, full.len() - 1] {
+        let (end, c) = run_mirror(&f, full[..cut].to_vec(), StreamPolicy::new(&keys));
+        not_complete(end, &c);
+        assert_eq!(end, RunEnd::Suspended, "cut {cut}");
+    }
+}
+
+#[test]
+fn reordered_frames_are_refused() {
+    let f = fixture();
+    let keys = [f.public];
+    let mut fr = frames(&f);
+    // Within a segment: swap two chunk frames (descriptor + first segment).
+    let i = fr.iter().position(|x| x[0] == 0x01 && x[9] == 1).unwrap();
+    fr.swap(i, i + 1);
+    let (end, c) = run_mirror(&f, fr.concat(), StreamPolicy::new(&keys));
+    not_complete(end, &c);
+
+    // Across stages: the last frame (stage 4) delivered first, right after
+    // the descriptor, must be refused (`requires_mask` unmet).
+    let mut fr = frames(&f);
+    let last = fr.pop().unwrap();
+    fr.insert(1, last);
+    let (end, c) = run_mirror(&f, fr.concat(), StreamPolicy::new(&keys));
+    not_complete(end, &c);
+    assert!(
+        c.ingest.vectors().is_empty(),
+        "nothing released before its stage"
+    );
+    assert!(!c.ingest.layers().layer_a);
+}
+
+#[test]
+fn duplicated_and_bit_flipped_frames_are_refused() {
+    let f = fixture();
+    let keys = [f.public];
+    let fr = frames(&f);
+    let i = fr.iter().position(|x| x[0] == 0x01 && x[9] == 2).unwrap();
+    let mut dup = fr.clone();
+    dup.insert(i + 1, fr[i].clone());
+    let (end, c) = run_mirror(&f, dup.concat(), StreamPolicy::new(&keys));
+    not_complete(end, &c);
+
+    for flip in [17usize, 100, 2000] {
+        let mut bad = fr.clone();
+        bad[i][flip] ^= 0x04;
+        let (end, c) = run_mirror(&f, bad.concat(), StreamPolicy::new(&keys));
+        not_complete(end, &c);
+        assert!(matches!(end, RunEnd::Suspended | RunEnd::Poisoned(_)));
+    }
+    // A flipped descriptor bit is rejected outright.
+    let mut bad = fr.clone();
+    bad[0][5 + 0x40] ^= 1;
+    let (end, c) = run_mirror(&f, bad.concat(), StreamPolicy::new(&keys));
+    assert!(matches!(end, RunEnd::Poisoned(_)));
+    assert!(matches!(c.ingest.state(), StreamState::Rejected(_)));
+    assert!(c.ingest.vectors().is_empty());
+}
+
+#[test]
+fn replayed_old_epoch_is_rejected_with_a_witness() {
+    let f = fixture_with(2600, 16, 8, 11, 1);
+    let keys = [f.public];
+    let pin = |id: &[u8; 16]| {
+        (id == &f.file_id).then_some(EpochPin {
+            epoch: 2,
+            descriptor_hash: None,
+        })
+    };
+    let mut policy = StreamPolicy::new(&keys);
+    policy.epoch_pin = Some(&pin);
+    let (end, c) = run_mirror(&f, frames(&f).concat(), policy);
+    assert_eq!(end, RunEnd::Poisoned(ErrorCode::StreamStaleEpoch));
+    assert!(matches!(
+        c.ingest.state(),
+        StreamState::Rejected(ErrorCode::StreamStaleEpoch)
+    ));
+    assert!(c
+        .ingest
+        .witnesses()
+        .contains(&StreamWitness::DescriptorRejected(
+            ErrorCode::StreamStaleEpoch
+        )));
+    assert!(c.ingest.vectors().is_empty() && !c.ingest.layers().layer_a);
+}
+
+#[test]
+fn chunks_spliced_from_another_file_signed_by_the_same_key_are_refused() {
+    let a = fixture_with(2600, 16, 8, 11, 1);
+    let b = fixture_with(2600, 16, 8, 12, 1); // same key, other file_id and data
+    assert_ne!(a.file_id, b.file_id);
+    let keys = [a.public];
+    let fa = frames(&a);
+    let fb = frames(&b);
+    let i = fa.iter().position(|x| x[0] == 0x01 && x[9] == 3).unwrap();
+    assert_eq!(fa[i][..13], fb[i][..13], "same seg_id and chunk_index");
+    let mut spliced = fa.clone();
+    spliced[i] = fb[i].clone();
+    let (end, c) = run_mirror(&a, spliced.concat(), StreamPolicy::new(&keys));
+    not_complete(end, &c);
+    assert!(c.stats.refusals >= 1);
+}
+
+#[test]
+fn size_lies_poison_before_allocating_and_unpublish_everything() {
+    let f = fixture();
+    let keys = [f.public];
+    // Let layers A and B publish, then lie about a late chunk's length.
+    let mut fr = frames(&f);
+    let late = fr.len() - 3;
+    assert_eq!(fr[late][0], 0x01);
+    fr[late][13..17].copy_from_slice(&0xFFFF_FF00u32.to_le_bytes());
+    let mut c = StreamClient::new(
+        StreamPolicy::new(&keys),
+        MemTransport::new(fr.concat()),
+        ClientConfig::default(),
+    );
+    let mut published_a = false;
+    let end = c.run(&mut |ing| published_a |= ing.layers().layer_a);
+    assert!(published_a, "layer A was searchable before the lie");
+    assert_eq!(end, RunEnd::Poisoned(ErrorCode::StreamFrameSizeLie));
+    let l = c.ingest.layers();
+    assert!(
+        !l.layer_a && !l.layer_b && !l.layer_c,
+        "poison drops every layer"
+    );
+    assert!(
+        c.ingest.vectors().is_empty(),
+        "poison unpublishes every vector"
+    );
+    let a = c.ingest.query(f.ds.vector(0), 5, 64);
+    assert!(a.envelope.results.is_empty() && !a.sealed);
+    assert!(matches!(
+        c.ingest.witnesses().last(),
+        Some(StreamWitness::StreamPoisoned {
+            reason: ErrorCode::StreamFrameSizeLie,
+            ..
+        })
+    ));
+    // The reassembly buffer never grew toward the declared 4 GiB.
+    assert!(c.ingest.offset() < 1 << 28);
+}
+
+#[test]
+fn transient_corruption_is_retried_to_completion() {
+    use rvf_runtime::progressive_stream::client::{FetchEnd, Transport};
+    struct Flaky {
+        good: Vec<u8>,
+        corrupt_left: u32,
+        seed: u64,
+    }
+    impl Transport for Flaky {
+        fn fetch(
+            &mut self,
+            off: u64,
+            sink: &mut dyn FnMut(&[u8]) -> bool,
+        ) -> std::io::Result<FetchEnd> {
+            let mut data = self.good[off as usize..].to_vec();
+            if self.corrupt_left > 0 && data.len() > 5000 {
+                self.corrupt_left -= 1;
+                self.seed = self
+                    .seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let at = 1000 + (self.seed >> 33) as usize % (data.len() - 1000);
+                data[at] ^= 0x10;
+            }
+            for c in data.chunks(8192) {
+                if !sink(c) {
+                    return Ok(FetchEnd::Aborted);
+                }
+            }
+            Ok(FetchEnd::Eof)
+        }
+    }
+    let f = fixture();
+    let keys = [f.public];
+    let mut policy = StreamPolicy::new(&keys);
+    policy.fault_budget = 100;
+    let mut c = StreamClient::new(
+        policy,
+        Flaky {
+            good: frames(&f).concat(),
+            corrupt_left: 6,
+            seed: 1,
+        },
+        ClientConfig {
+            max_stalls: 4,
+            frame_retries: 5,
+        },
+    );
+    assert_eq!(
+        c.run(&mut |ing| assert_authentic(ing, &f.ds)),
+        RunEnd::Complete
+    );
+    assert!(c.stats.refusals >= 1, "{:?}", c.stats);
+    assert_eq!(c.ingest.vectors().len(), f.ds.len());
+}

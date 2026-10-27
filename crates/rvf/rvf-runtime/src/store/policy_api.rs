@@ -2,7 +2,7 @@
 //! ADR-354 item 5). State and checks live in the sibling `security` module.
 
 use super::security::{
-    check_signed_root, read_trailing_page, CommitMismatch, LastManifest, SecurityState,
+    check_signed_root, read_trailing_page, CommitMismatch, Committed, LastManifest, SecurityState,
 };
 use super::*;
 use rvf_types::security::{SecurityError, SecurityPolicy};
@@ -88,9 +88,38 @@ impl RvfStore {
         self.security.legacy_dialect.load(Ordering::Relaxed)
     }
 
+    /// True if the file ends in a signed Level-0 root page that names the
+    /// manifest in use (CRC-valid and self-consistent; **not** verified
+    /// against any key unless the store was opened with a signature-checking
+    /// policy). Lets a `Permissive` consumer notice it is handling a signed
+    /// artifact it is not verifying.
+    pub fn has_signed_root_page(&self) -> bool {
+        self.security.root_page_present.load(Ordering::Acquire)
+    }
+
     /// The policy this store was opened under.
     pub fn security_policy(&self) -> SecurityPolicy {
         self.security.policy
+    }
+
+    /// True when this handle must not write: read-only, or it holds no signing
+    /// key yet the file ends in a valid signed root page that a write would
+    /// have to cut (see [`RvfStore::allow_unsigning`]).
+    pub(super) fn is_write_blocked(&self) -> bool {
+        self.read_only
+            || (self.security.root_page_present.load(Ordering::Acquire)
+                && self.security.signing_key.is_none()
+                && !self.security.allow_unsigning)
+    }
+
+    /// Consent for a handle that cannot re-sign (opened with `open()`, i.e.
+    /// `Permissive`) to write to a store whose file ends in a signed root
+    /// page. The write cuts the page, so the file is **unsigned from then
+    /// on** and `Strict` readers refuse it. Without this call such a handle
+    /// refuses to write (`ReadOnly`); use [`RvfStore::open_signed`] to keep
+    /// the signature.
+    pub fn allow_unsigning(&mut self, allow: bool) {
+        self.security.allow_unsigning = allow;
     }
 
     /// Writer cursor positioned at EOF. A trailing root page (ours) is cut
@@ -125,14 +154,12 @@ impl RvfStore {
         }
         if let Some(committed) = &self.security.committed {
             let expected = committed.get(&offset).copied();
-            let ok = header.checksum_algo == crate::hashing::ALGO_SHAKE256_128
-                && expected == Some(header.content_hash);
-            if !ok {
+            if !expected.is_some_and(|c| c.header_ok(&header)) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     CommitMismatch {
                         offset,
-                        expected,
+                        expected: expected.map(|c| c.hash),
                         actual: header.content_hash,
                     },
                 ));
@@ -211,7 +238,15 @@ impl RvfStore {
             let mut by_offset = HashMap::new();
             for e in &manifest.segment_dir {
                 if let Some(h) = by_id.get(&e.seg_id) {
-                    by_offset.insert(e.offset, *h);
+                    by_offset.insert(
+                        e.offset,
+                        Committed {
+                            hash: *h,
+                            seg_id: e.seg_id,
+                            seg_type: e.seg_type,
+                            payload_len: e.payload_length,
+                        },
+                    );
                 }
             }
             self.security.committed = Some(by_offset);
@@ -226,11 +261,85 @@ impl RvfStore {
         Ok(())
     }
 
+    /// Compaction input for a signing handle (F-01, F-02).
+    ///
+    /// Returns the file body and the segments to carry over, taken from the
+    /// segment directory this handle holds and nothing else. Every carried
+    /// segment must match the hash this handle committed to (recorded when it
+    /// wrote the segment, or loaded from the verified manifest at open) in
+    /// payload and in every header field; one mismatch refuses the whole
+    /// compaction before any state changes. Segments that are in the file but
+    /// not in the directory are not carried, and a hash is never recomputed
+    /// from bytes read back from the file.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn verified_compaction_sources(
+        &self,
+    ) -> Result<(Vec<u8>, Vec<(usize, u64, u64, u8, [u8; 16])>), RvfError> {
+        let mut bytes = Vec::new();
+        {
+            let mut r = BufReader::new(&self.file);
+            r.seek(SeekFrom::Start(0))
+                .and_then(|_| r.read_to_end(&mut bytes))
+                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+        }
+        let body = rvf_wire::tail_scan::split_root_page(&bytes).0.len();
+        bytes.truncate(body);
+        let writer = self
+            .seg_writer
+            .as_ref()
+            .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
+        let skip = [
+            SegmentType::Vec as u8,
+            SegmentType::Manifest as u8,
+            SegmentType::Journal as u8,
+            SegmentType::Index as u8,
+            SegmentType::Meta as u8,
+        ];
+        let mismatch = |offset: u64, expected: [u8; 16], actual: [u8; 16]| {
+            RvfError::Security(SecurityError::ContentHashMismatch {
+                pointer_name: "compaction_source",
+                expected_hash: expected,
+                actual_hash: actual,
+                seg_offset: offset,
+            })
+        };
+        let mut out = Vec::new();
+        for &(id, off, plen, ty) in &self.segment_dir {
+            if skip.contains(&ty) {
+                continue;
+            }
+            let committed = writer
+                .hash_of(id)
+                .ok_or_else(|| mismatch(off, [0; 16], [0; 16]))?;
+            let start = usize::try_from(off).map_err(|_| mismatch(off, committed, [0; 16]))?;
+            let end = usize::try_from(plen)
+                .ok()
+                .and_then(|p| p.checked_add(SEGMENT_HEADER_SIZE))
+                .and_then(|t| start.checked_add(t))
+                .filter(|&e| e <= bytes.len() && off % rvf_types::SEGMENT_ALIGNMENT as u64 == 0)
+                .ok_or_else(|| mismatch(off, committed, [0; 16]))?;
+            let header = rvf_wire::read_segment_header(&bytes[start..end])
+                .map_err(|_| mismatch(off, committed, [0; 16]))?;
+            let actual = compute_shake256_128(&bytes[start + SEGMENT_HEADER_SIZE..end]);
+            let c = Committed {
+                hash: committed,
+                seg_id: id,
+                seg_type: ty,
+                payload_len: plen,
+            };
+            if actual != committed || !c.header_ok(&header) {
+                return Err(mismatch(off, committed, actual));
+            }
+            out.push((start, id, plen, ty, committed));
+        }
+        Ok((bytes, out))
+    }
+
     /// Signed stores only: rebuild the committed-hash map from the directory
     /// and the writer's recorded hashes, so segments written (or moved by
     /// compaction) during this session read back under enforcement.
     pub(super) fn refresh_committed(&mut self) {
-        if self.security.signing_key.is_none() || self.security.committed.is_none() {
+        if self.security.signing_key.is_none() {
             return;
         }
         let Some(writer) = self.seg_writer.as_ref() else {
@@ -239,7 +348,19 @@ impl RvfStore {
         let map = self
             .segment_dir
             .iter()
-            .filter_map(|&(id, offset, _, _)| writer.hash_of(id).map(|h| (offset, h)))
+            .filter_map(|&(id, offset, plen, ty)| {
+                writer.hash_of(id).map(|h| {
+                    (
+                        offset,
+                        Committed {
+                            hash: h,
+                            seg_id: id,
+                            seg_type: ty,
+                            payload_len: plen,
+                        },
+                    )
+                })
+            })
             .collect();
         self.security.committed = Some(map);
     }

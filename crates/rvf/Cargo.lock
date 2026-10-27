@@ -1861,6 +1861,7 @@ name = "rvf-runtime"
 version = "0.4.0"
 dependencies = [
  "crc32fast",
+ "ed25519-dalek",
  "log",
  "rand",
  "rvf-index",
@@ -1876,11 +1877,15 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "axum-test",
+ "bytes",
  "clap",
+ "ed25519-dalek",
+ "futures-util",
  "http-body-util",
  "mime_guess",
  "rvf-runtime",
  "rvf-types",
+ "rvf-wire",
  "serde",
  "serde_json",
  "tempfile",

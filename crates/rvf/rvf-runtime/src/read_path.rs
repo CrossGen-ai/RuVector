@@ -12,7 +12,7 @@ use rvf_types::{
     FileIdentity, SegmentHeader, SEGMENT_ALIGNMENT, SEGMENT_HEADER_SIZE, SEGMENT_MAGIC,
 };
 use rvf_wire::reader::read_segment_header;
-use rvf_wire::tail_scan::{extent_fits, manifest_candidates, split_root_page, ScanMode};
+use rvf_wire::tail_scan::{extent_fits, manifest_candidates, ScanMode};
 use std::io::{self, Read, Seek, SeekFrom};
 
 /// In-memory vector storage. The contiguous-slab implementation lives in
@@ -62,114 +62,194 @@ pub(crate) struct LocatedManifest {
     pub mode: ScanMode,
 }
 
-/// Choose the scan mode for a file from its first segment header.
-///
-/// Every legacy-dialect file starts with a segment stamped `checksum_algo = 0`
-/// (the runtime wrote its CRC-rotation hash under that label), and legacy
-/// segments are unpadded, so only the byte-granular mode can find their later
-/// manifests. Anything else is wire dialect: 64-byte aligned.
-fn mode_for_file<R: Read + Seek>(reader: &mut R, file_size: u64) -> io::Result<ScanMode> {
-    if file_size < SEGMENT_HEADER_SIZE as u64 {
-        return Ok(ScanMode::Aligned);
+/// Work done by one manifest scan. Exposed for the DoS regression test, which
+/// bounds attempts and copied bytes rather than wall time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScanStats {
+    /// Manifest header candidates examined.
+    pub candidates: u32,
+    /// Candidates whose payload was handed to the manifest parser.
+    pub parse_attempts: u32,
+    /// Sum of payload lengths handed to the parser.
+    pub payload_bytes_parsed: u64,
+    /// Bytes copied into a fresh allocation (a winning payload; payloads read
+    /// from the file because they extend past the window).
+    pub bytes_copied: u64,
+    /// Largest buffer allocated for a window or a payload read.
+    pub max_buffer: u64,
+}
+
+/// Parse attempts per open. A hostile file of fake MANIFEST headers can offer
+/// millions of candidates; a legitimate file has the real one first or has a
+/// handful of torn leftovers newer than it.
+const MAX_PARSE_ATTEMPTS: u32 = 256;
+/// First window read from the tail, then fixed-size blocks going backwards.
+const FIRST_BLOCK: u64 = 256 << 10;
+const BLOCK: u64 = 8 << 20;
+
+/// Extra knowledge the caller has before scanning.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ScanHint {
+    /// Under `Strict`/`Paranoid` with a root page present: the offset the
+    /// signed page commits to. Candidates older than it are never examined,
+    /// and newer ones are examined only up to the attempt budget.
+    pub expect_offset: Option<u64>,
+}
+
+fn align_up(x: u64) -> u64 {
+    x.saturating_add(63) & !63
+}
+
+fn header_at<R: Read + Seek>(r: &mut R, off: u64, len: u64) -> io::Result<Option<SegmentHeader>> {
+    if off
+        .checked_add(SEGMENT_HEADER_SIZE as u64)
+        .is_none_or(|e| e > len)
+    {
+        return Ok(None);
     }
-    reader.seek(SeekFrom::Start(0))?;
-    let mut first = [0u8; SEGMENT_HEADER_SIZE];
-    reader.read_exact(&mut first)?;
-    Ok(match read_segment_header(&first) {
-        Ok(h) if h.checksum_algo == 0 => ScanMode::ByteGranular,
-        _ => ScanMode::Aligned,
+    r.seek(SeekFrom::Start(off))?;
+    let mut b = [0u8; SEGMENT_HEADER_SIZE];
+    r.read_exact(&mut b)?;
+    Ok(read_segment_header(&b).ok())
+}
+
+/// Choose the scan mode from the file's actual layout, not from one byte.
+///
+/// Walk the first headers. At the first segment whose header + payload does
+/// not end on a 64-byte boundary, the next header sits either at the padded
+/// boundary (wire dialect) or immediately after the payload (legacy). Exactly
+/// one of the two positions holding a valid header decides it. Only when the
+/// layout is undecidable does the first segment's `checksum_algo = 0`
+/// legacy marker break the tie. An attacker who flips that unhashed byte on a
+/// wire file therefore does not select the weaker byte-granular scan.
+fn mode_for_file<R: Read + Seek>(reader: &mut R, file_size: u64) -> io::Result<ScanMode> {
+    let first_algo0 = match header_at(reader, 0, file_size)? {
+        Some(h) => h.checksum_algo == 0,
+        None => return Ok(ScanMode::Aligned),
+    };
+    let mut off = 0u64;
+    for _ in 0..8 {
+        let Some(h) = header_at(reader, off, file_size)? else {
+            break;
+        };
+        let unpadded = off
+            .saturating_add(h.payload_length)
+            .saturating_add(SEGMENT_HEADER_SIZE as u64);
+        let padded = align_up(unpadded);
+        if unpadded == padded {
+            off = unpadded;
+            continue;
+        }
+        let at_padded = header_at(reader, padded, file_size)?.is_some();
+        let at_unpadded = header_at(reader, unpadded, file_size)?.is_some();
+        return Ok(match (at_padded, at_unpadded) {
+            (true, false) => ScanMode::Aligned,
+            (false, true) => ScanMode::ByteGranular,
+            _ if first_algo0 => ScanMode::ByteGranular,
+            _ => ScanMode::Aligned,
+        });
+    }
+    Ok(if first_algo0 {
+        ScanMode::ByteGranular
+    } else {
+        ScanMode::Aligned
+    })
+}
+
+/// End of the segment area: the file minus a trailing Level-0 root page.
+fn body_end<R: Read + Seek>(reader: &mut R, file_size: u64) -> io::Result<u64> {
+    let page = rvf_types::ROOT_MANIFEST_SIZE as u64;
+    if file_size < page + SEGMENT_HEADER_SIZE as u64 {
+        return Ok(file_size);
+    }
+    reader.seek(SeekFrom::Start(file_size - page))?;
+    let mut m = [0u8; 4];
+    reader.read_exact(&mut m)?;
+    Ok(if m == rvf_types::ROOT_MANIFEST_MAGIC.to_le_bytes() {
+        file_size - page
+    } else {
+        file_size
     })
 }
 
 /// Scan backwards from EOF to find and parse the latest valid manifest.
 ///
 /// The scan itself is `rvf_wire::tail_scan` (the single tail scanner); this
-/// function only supplies windows of the file and the runtime's payload
-/// parser. Wire-dialect files are scanned at 64-byte alignment. Legacy-dialect
-/// files (first segment `checksum_algo = 0`) are scanned byte-granular, the
-/// documented fallback for unpadded segments. If an aligned scan finds no
-/// manifest header anywhere (and only then) the byte-granular scan is tried
-/// and the result reported as such; a parse failure of an aligned candidate
-/// never triggers the fallback.
+/// function supplies bounded blocks of the file and the runtime's payload
+/// parser. Wire-dialect files are scanned at 64-byte alignment; legacy files
+/// (see [`mode_for_file`]) byte-granular, the documented fallback for unpadded
+/// segments. If an aligned scan finds no manifest header anywhere (and only
+/// then) the byte-granular scan is tried and the result reported as such; a
+/// parse failure of an aligned candidate never triggers the fallback.
+///
+/// Cost is bounded for hostile files: at most [`MAX_PARSE_ATTEMPTS`] payloads
+/// are parsed, their total size is capped by `max(16 MiB, file size)` after
+/// the first, candidates are parsed in place from the block buffer (no copy
+/// unless the parse succeeds), and no allocation exceeds one block or one
+/// payload.
 pub(crate) fn find_latest_manifest<R: Read + Seek>(
     reader: &mut R,
+    hint: ScanHint,
+    stats: &mut ScanStats,
 ) -> io::Result<Option<LocatedManifest>> {
     let file_size = reader.seek(SeekFrom::End(0))?;
     if file_size < SEGMENT_HEADER_SIZE as u64 {
         return Ok(None);
     }
     let mode = mode_for_file(reader, file_size)?;
-    let (found, saw_any) = scan_all_windows(reader, file_size, mode)?;
-    if found.is_some() {
+    let end = body_end(reader, file_size)?;
+    let (found, saw_any, exhausted) = scan_blocks(reader, file_size, end, mode, hint, stats)?;
+    if found.is_some() || exhausted {
         return Ok(found);
     }
-    if mode == ScanMode::Aligned && !saw_any {
-        return Ok(scan_all_windows(reader, file_size, ScanMode::ByteGranular)?.0);
+    if mode == ScanMode::Aligned && !saw_any && hint.expect_offset.is_none() {
+        return Ok(scan_blocks(reader, file_size, end, ScanMode::ByteGranular, hint, stats)?.0);
     }
     Ok(None)
 }
 
-/// Widen the backward scan window until a manifest parses or the file start
-/// is reached. Returns the manifest (if any) and whether any header candidate
-/// was seen at all.
-fn scan_all_windows<R: Read + Seek>(
+/// Walk the segment area backwards in bounded blocks. Returns the manifest,
+/// whether any header candidate was seen, and whether a budget stopped the scan.
+fn scan_blocks<R: Read + Seek>(
     reader: &mut R,
     file_size: u64,
+    body_end: u64,
     mode: ScanMode,
-) -> io::Result<(Option<LocatedManifest>, bool)> {
-    // The manifest grows with segment count, so it can extend arbitrarily far
-    // back from EOF: 64 KB -> 1 MB -> 16 MB -> whole file.
-    const SCAN_WINDOWS: [u64; 4] = [64 << 10, 1 << 20, 16 << 20, u64::MAX];
-    let mut prev_scan_size = 0u64;
-    let mut saw_any = false;
-    for window in SCAN_WINDOWS {
-        let scan_size = window.min(file_size);
-        if scan_size == prev_scan_size {
-            break; // Already scanned the whole file.
-        }
-        let (found, saw) = scan_tail_for_manifest(reader, file_size, scan_size, mode)?;
-        saw_any |= saw;
-        if found.is_some() {
-            return Ok((found, saw_any));
-        }
-        prev_scan_size = scan_size;
-    }
-    Ok((None, saw_any))
-}
-
-/// Scan the final `scan_size` bytes of the file for the latest valid manifest.
-fn scan_tail_for_manifest<R: Read + Seek>(
-    reader: &mut R,
-    file_size: u64,
-    scan_size: u64,
-    mode: ScanMode,
-) -> io::Result<(Option<LocatedManifest>, bool)> {
-    // Round the window start DOWN to a segment boundary so alignment within
-    // the buffer is alignment within the file.
-    let scan_start = (file_size - scan_size) & !(SEGMENT_ALIGNMENT as u64 - 1);
-    reader.seek(SeekFrom::Start(scan_start))?;
-    let mut buf = vec![0u8; (file_size - scan_start) as usize];
-    reader.read_exact(&mut buf)?;
-
-    // A trailing Level-0 root page is not a segment: never scan inside it.
-    let (body, _page) = split_root_page(&buf);
+    hint: ScanHint,
+    stats: &mut ScanStats,
+) -> io::Result<(Option<LocatedManifest>, bool, bool)> {
+    let budget = file_size.max(16 << 20);
     let mut saw = false;
-    for (i, header) in manifest_candidates(body, mode) {
-        saw = true;
-        // Reject implausible payload lengths to prevent OOM.
-        if header.payload_length > MAX_READ_PAYLOAD {
-            continue;
-        }
-        let payload_length = header.payload_length as usize;
-        let payload_start = i + SEGMENT_HEADER_SIZE;
-        let Some(payload_end) = payload_start.checked_add(payload_length) else {
-            continue;
-        };
-        let file_offset = scan_start + i as u64;
-        let payload: Vec<u8> = if payload_end <= buf.len() {
-            buf[payload_start..payload_end].to_vec()
-        } else {
-            // Payload extends beyond our buffer -- but must exist in the file.
+    // Candidate positions p satisfy p + 64 <= body_end.
+    let mut hi = body_end.saturating_sub(SEGMENT_HEADER_SIZE as u64 - 1);
+    let mut first = true;
+    while hi > 0 {
+        let size = if first { FIRST_BLOCK } else { BLOCK };
+        first = false;
+        let lo = hi.saturating_sub(size) & !(SEGMENT_ALIGNMENT as u64 - 1);
+        let buf_end = (hi + SEGMENT_HEADER_SIZE as u64 - 1).min(body_end);
+        reader.seek(SeekFrom::Start(lo))?;
+        let mut buf = vec![0u8; (buf_end - lo) as usize];
+        reader.read_exact(&mut buf)?;
+        stats.max_buffer = stats.max_buffer.max(buf.len() as u64);
+        for (i, header) in manifest_candidates(&buf, mode) {
+            if i as u64 >= hi - lo {
+                continue; // belongs to the newer block (header overlap)
+            }
+            saw = true;
+            stats.candidates += 1;
+            let file_offset = lo + i as u64;
+            if hint.expect_offset.is_some_and(|e| file_offset < e) {
+                return Ok((None, saw, true)); // older than the signed manifest
+            }
+            if header.payload_length > MAX_READ_PAYLOAD {
+                continue;
+            }
+            let plen = header.payload_length;
+            let payload_start = i + SEGMENT_HEADER_SIZE;
+            let Some(payload_end) = payload_start.checked_add(plen as usize) else {
+                continue;
+            };
             if !extent_fits(
                 usize::try_from(file_offset).unwrap_or(usize::MAX),
                 &header,
@@ -177,27 +257,47 @@ fn scan_tail_for_manifest<R: Read + Seek>(
             ) {
                 continue;
             }
-            reader.seek(SeekFrom::Start(file_offset + SEGMENT_HEADER_SIZE as u64))?;
-            let mut p = vec![0u8; payload_length];
-            if reader.read_exact(&mut p).is_err() {
-                continue;
+            if stats.parse_attempts >= MAX_PARSE_ATTEMPTS
+                || (stats.parse_attempts > 0 && stats.payload_bytes_parsed + plen > budget)
+            {
+                return Ok((None, saw, true));
             }
-            p
-        };
-        if let Some(manifest) = parse_manifest_payload(&payload) {
-            return Ok((
-                Some(LocatedManifest {
-                    manifest,
-                    offset: file_offset,
-                    header,
-                    payload,
-                    mode,
-                }),
-                saw,
-            ));
+            stats.parse_attempts += 1;
+            stats.payload_bytes_parsed += plen;
+            let owned: Option<Vec<u8>>;
+            let slice: &[u8] = if payload_end <= buf.len() {
+                &buf[payload_start..payload_end]
+            } else {
+                // The payload runs past this block: read it from the file.
+                reader.seek(SeekFrom::Start(file_offset + SEGMENT_HEADER_SIZE as u64))?;
+                let mut p = vec![0u8; plen as usize];
+                stats.max_buffer = stats.max_buffer.max(plen);
+                stats.bytes_copied += plen;
+                if reader.read_exact(&mut p).is_err() {
+                    continue;
+                }
+                owned = Some(p);
+                owned.as_deref().unwrap_or(&[])
+            };
+            if let Some(manifest) = parse_manifest_payload(slice) {
+                let payload = slice.to_vec();
+                stats.bytes_copied += payload.len() as u64;
+                return Ok((
+                    Some(LocatedManifest {
+                        manifest,
+                        offset: file_offset,
+                        header,
+                        payload,
+                        mode,
+                    }),
+                    saw,
+                    false,
+                ));
+            }
         }
+        hi = lo;
     }
-    Ok((None, saw))
+    Ok((None, saw, false))
 }
 
 /// Locate the latest manifest in a complete in-memory file with the same
@@ -208,11 +308,28 @@ fn scan_tail_for_manifest<R: Read + Seek>(
 /// runtime against `rvf-wire`'s scanner on identical bytes; not a stable API.
 #[doc(hidden)]
 pub fn locate_manifest_in_bytes(data: &[u8]) -> Option<(u64, bool)> {
+    locate_manifest_with_stats(data).0
+}
+
+/// [`locate_manifest_in_bytes`] plus the scan's work counters.
+#[doc(hidden)]
+pub fn locate_manifest_with_stats(data: &[u8]) -> (Option<(u64, bool)>, ScanStats) {
+    let mut stats = ScanStats::default();
     let mut cursor = io::Cursor::new(data);
-    find_latest_manifest(&mut cursor)
+    let r = find_latest_manifest(&mut cursor, ScanHint::default(), &mut stats)
         .ok()
         .flatten()
-        .map(|m| (m.offset, m.mode == ScanMode::ByteGranular))
+        .map(|m| (m.offset, m.mode == ScanMode::ByteGranular));
+    (r, stats)
+}
+
+/// Which scan mode the store would pick for `data` (`true` = byte-granular).
+#[doc(hidden)]
+pub fn scan_is_legacy_for_bytes(data: &[u8]) -> bool {
+    let mut cursor = io::Cursor::new(data);
+    mode_for_file(&mut cursor, data.len() as u64)
+        .map(|m| m == ScanMode::ByteGranular)
+        .unwrap_or(false)
 }
 
 /// Whether `payload` parses as a runtime manifest. Test/fuzz support only.

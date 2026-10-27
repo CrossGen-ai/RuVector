@@ -40,3 +40,15 @@ Existing files stay readable. Writers change; a writer-side dialect switch ships
 ## Consequences and risks
 
 Writer dialect change touches the hot path of `rvf-runtime`; mitigated by dual-accept and by round-trip tests over the existing test corpus. Making `Strict` effective can break callers that relied on it being ignored; mitigated by an explicit lower policy and a release note.
+
+## Implementation notes and residual risks (runtime side, project Ofer)
+
+Implemented in `rvf-runtime` 0.4.0. Outcomes of the adversarial review that shape what "Strict is real" means:
+
+- **Strict is opt-in.** `RvfStore::open` / `open_readonly` remain `Permissive`. No in-tree consumer (`rvf-launch`, `rvf-cli` ingest/delete/compact, `rvf-server`) opts into `Strict`; none was changed silently. `rvf-launch::extract_kernel` now reports `signature_unverified` (and warns on stderr) when it extracts a kernel from a file that carries a signed root page it did not verify. Callers that execute extracted bytes must open with `open_with_policy` first.
+- **Non-Strict scans can be steered.** Under `Permissive`/`WarnOnly` an aligned MANIFEST header planted inside the payload of a segment appended after the real manifest wins the tail scan (both scanners agree; scanning cannot authenticate). Strict refuses it: the signed page names the manifest offset, length and payload hash. The legacy byte-granular scan is chosen from the file's layout (the first segment whose end is not 64-aligned decides between a padded and an unpadded successor header), not from the unhashed `checksum_algo` byte, which only breaks ties when the layout is undecidable.
+- **Scan cost is bounded.** At most 256 manifest payloads are parsed per open, in place, with a total-size budget of `max(16 MiB, file size)`; windows are read in blocks of at most 8 MiB. With a signed page under Strict/Paranoid the scan stops at the page's manifest offset.
+- **Signed stores authenticate whole segments.** The signed directory commits to a SHAKE-256-128 payload hash per segment and pins every header field (id, type and length from the directory; flags, compression, reserved words, timestamp, `uncompressed_len` and padding to the writer's constants).
+- **Compaction never launders.** For a signing handle `compact()` carries only directory-listed segments, verifies each against the hash the handle committed to (not recomputed from file bytes), and refuses the whole compaction on any mismatch before changing state. Witness segments appended by `query_audited` and `compact` are listed in a new signed manifest, so a signed store has no unlisted trailing segments.
+- **A `Permissive` handle will not cut a signature.** A plain `open()` of a store whose file ends in a valid signed page refuses writes (`ReadOnly`) unless the caller opts in with `allow_unsigning(true)`; `open_signed` keeps the signature.
+- **No freshness yet.** An older validly signed file replays cleanly under runtime `Strict`; epoch pinning exists only for RVSD streams. COW children are `Permissive`; `Paranoid` is `Strict` plus reading every directory segment.

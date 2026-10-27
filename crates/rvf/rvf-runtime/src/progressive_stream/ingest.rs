@@ -1,0 +1,485 @@
+//! `StreamIngest`: feeds verified stream events into a `ProgressiveIndex`.
+//!
+//! Invariants (ADR-353 section 6):
+//!
+//! * Only bytes released by `StreamVerifier` as `VerifiedChunk`s are parsed;
+//!   a vector becomes visible once all of its record bytes were released.
+//! * A layer is published only when its segment is `SegmentVerified`; a layer
+//!   is never searched before Layer A (entry points, centroids, anchors) is
+//!   published. Layers B and C that arrive without A are a protocol violation
+//!   and poison the stream.
+//! * `Poisoned` drops every layer and every vector. `Suspended` keeps what was
+//!   verified (it stays valid) but answers carry `sealed = false` regardless.
+//! * Answers carry `sealed = true` only in state `Complete`.
+//!
+//! The reassembly buffer holds at most one frame plus the slice being fed.
+
+use super::layers::{decode_a, decode_b, MAGIC_A, MAGIC_B};
+use super::vectors::{VecParse, VerifiedVectors};
+use crate::index_path::decode_graph;
+use crate::options::{QualityEnvelope, SearchResult};
+use rvf_index::{LayerC, ProgressiveIndex};
+use rvf_types::quality::{
+    BudgetReport, DegradationReason, DegradationReport, FallbackPath, IndexLayersUsed,
+    ResponseQuality, RetrievalQuality, SearchEvidenceSummary,
+};
+use rvf_types::ErrorCode;
+use rvf_wire::stream::{
+    Event, IdentityStatus, StreamPolicy, StreamState, StreamVerifier, FRAME_CHUNK,
+    FRAME_CHUNK_TABLE, FRAME_DESCRIPTOR,
+};
+use std::collections::{HashMap, HashSet};
+
+const SEG_VEC: u8 = 0x01;
+const SEG_INDEX: u8 = 0x02;
+const SEG_JOURNAL: u8 = 0x04;
+const MAX_WITNESSES: usize = 4096;
+
+/// Audit record of a state change (the RVM witness chain consumes these).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StreamWitness {
+    /// Descriptor accepted.
+    DescriptorVerified([u8; 32]),
+    /// Descriptor refused.
+    DescriptorRejected(ErrorCode),
+    /// A layer became searchable (`b'A'`, `b'B'`, `b'C'`).
+    LayerPublished(u8),
+    /// Terminal failure; everything was unpublished.
+    StreamPoisoned {
+        /// Why.
+        reason: ErrorCode,
+        /// Bytes that had been verified.
+        verified_bytes: u64,
+    },
+    /// Input ended early.
+    Suspended,
+    /// Resumed after suspension.
+    Resumed,
+    /// Every segment verified.
+    Complete(IdentityStatus),
+}
+
+/// Result of feeding bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FeedOutcome {
+    /// Frames released or accepted.
+    pub frames: usize,
+    /// The first refused frame, if any (the rest of the input was dropped).
+    pub refused: Option<ErrorCode>,
+    /// Stream offset of the first byte that was not consumed as a good frame;
+    /// resume the transport here.
+    pub resume_offset: u64,
+}
+
+/// A query answer: the ADR-033 envelope plus streaming state.
+#[derive(Clone, Debug)]
+pub struct StreamAnswer {
+    /// Results and quality signals.
+    pub envelope: QualityEnvelope,
+    /// True only once the stream is `Complete`.
+    pub sealed: bool,
+    /// Receiver state when the answer was produced.
+    pub state: StreamState,
+    /// Verified bytes so far.
+    pub verified_bytes: u64,
+    /// Visible vectors.
+    pub visible_vectors: usize,
+}
+
+enum Parse {
+    Vec(VecParse),
+    Buf(Vec<u8>),
+    Ignore,
+}
+
+/// Verified-stream consumer feeding a progressive index.
+pub struct StreamIngest<'p> {
+    verifier: StreamVerifier<'p>,
+    buf: Vec<u8>,
+    pos: u64,
+    vectors: VerifiedVectors,
+    parses: HashMap<u64, Parse>,
+    kinds: HashMap<u64, (u8, u64)>,
+    index: ProgressiveIndex,
+    deleted: HashSet<u64>,
+    witnesses: Vec<StreamWitness>,
+    unpublished: bool,
+}
+
+impl<'p> StreamIngest<'p> {
+    /// A consumer waiting for the descriptor frame.
+    pub fn new(policy: StreamPolicy<'p>) -> Self {
+        Self {
+            verifier: StreamVerifier::new(policy),
+            buf: Vec::new(),
+            pos: 0,
+            vectors: VerifiedVectors::default(),
+            parses: HashMap::new(),
+            kinds: HashMap::new(),
+            index: ProgressiveIndex::new(),
+            deleted: HashSet::new(),
+            witnesses: Vec::new(),
+            unpublished: false,
+        }
+    }
+
+    /// Receiver state.
+    pub fn state(&self) -> StreamState {
+        self.verifier.state()
+    }
+
+    /// The underlying verifier (read-only).
+    pub fn verifier(&self) -> &StreamVerifier<'p> {
+        &self.verifier
+    }
+
+    /// Stream offset of the next byte to request.
+    pub fn offset(&self) -> u64 {
+        self.pos + self.buf.len() as u64
+    }
+
+    /// Visible vectors (verified only).
+    pub fn vectors(&self) -> &VerifiedVectors {
+        &self.vectors
+    }
+
+    /// Witness records so far.
+    pub fn witnesses(&self) -> &[StreamWitness] {
+        &self.witnesses
+    }
+
+    /// Layers currently searchable.
+    pub fn layers(&self) -> IndexLayersUsed {
+        IndexLayersUsed {
+            layer_a: self.index.layer_a.is_some(),
+            layer_b: self.index.layer_b.is_some(),
+            layer_c: self.index.layer_c.is_some(),
+            hot_cache: false,
+        }
+    }
+
+    fn witness(&mut self, w: StreamWitness) {
+        if self.witnesses.len() < MAX_WITNESSES {
+            self.witnesses.push(w);
+        }
+    }
+
+    /// Input ended before `Complete`.
+    pub fn end_of_input(&mut self) -> StreamState {
+        let was = self.verifier.state();
+        let s = self.verifier.end_of_input();
+        if was == StreamState::Receiving && s == StreamState::Suspended {
+            self.witness(StreamWitness::Suspended);
+        }
+        s
+    }
+
+    /// Continue after `Suspended` (progress is kept at chunk granularity).
+    pub fn resume(&mut self) -> bool {
+        let ok = self.verifier.resume();
+        if ok {
+            self.witness(StreamWitness::Resumed);
+        }
+        ok
+    }
+
+    /// Re-read the persisted body in file order and settle an `Unverifiable`
+    /// identity (see `StreamVerifier::finish_identity`).
+    pub fn finish_identity(
+        &mut self,
+        read_at: impl FnMut(u64, &mut [u8]) -> bool,
+    ) -> Result<(), ErrorCode> {
+        let r = self.verifier.finish_identity(read_at);
+        self.after_push();
+        r
+    }
+
+    /// Feed transport bytes. Stops at the first refused frame and drops the
+    /// remainder of `data`; `resume_offset` says where to continue.
+    pub fn feed(&mut self, data: &[u8]) -> FeedOutcome {
+        let mut out = FeedOutcome {
+            frames: 0,
+            refused: None,
+            resume_offset: self.pos,
+        };
+        if matches!(
+            self.verifier.state(),
+            StreamState::Poisoned(_) | StreamState::Rejected(_)
+        ) {
+            out.refused = Some(ErrorCode::StreamPoisoned);
+            return out;
+        }
+        let mut buf = std::mem::take(&mut self.buf);
+        buf.extend_from_slice(data);
+        let mut at = 0usize;
+        loop {
+            let rest = &buf[at..];
+            let Some(&t) = rest.first() else { break };
+            let hdr = match t {
+                FRAME_DESCRIPTOR => 5,
+                FRAME_CHUNK => 17,
+                FRAME_CHUNK_TABLE => 13,
+                _ => {
+                    self.verifier.poison(ErrorCode::StreamUnexpectedFrame);
+                    out.refused = Some(ErrorCode::StreamUnexpectedFrame);
+                    break;
+                }
+            };
+            if rest.len() < hdr {
+                break;
+            }
+            let declared = match t {
+                FRAME_DESCRIPTOR => u32::from_le_bytes(rest[1..5].try_into().unwrap()) as u64,
+                FRAME_CHUNK => u32::from_le_bytes(rest[13..17].try_into().unwrap()) as u64,
+                _ => 32 * u32::from_le_bytes(rest[9..13].try_into().unwrap()) as u64,
+            };
+            // Size lies are refused before any payload is buffered.
+            if declared > self.verifier.frame_payload_limit(t).unwrap_or(0) {
+                self.verifier.poison(ErrorCode::StreamFrameSizeLie);
+                out.refused = Some(ErrorCode::StreamFrameSizeLie);
+                break;
+            }
+            let total = hdr + declared as usize;
+            if rest.len() < total {
+                break;
+            }
+            let frame = &rest[..total];
+            at += total;
+            match self.verifier.push(frame) {
+                Ok(ev) => {
+                    out.frames += 1;
+                    self.pos += total as u64;
+                    self.apply(ev);
+                }
+                Err(code) => {
+                    out.refused = Some(code);
+                    at -= total; // the refused frame stays unconsumed
+                    break;
+                }
+            }
+            self.after_push();
+        }
+        if out.refused.is_some() {
+            // Drop buffered input; the transport restarts at `pos`.
+            buf.clear();
+        } else {
+            buf.drain(..at);
+        }
+        self.buf = buf;
+        self.after_push();
+        out.resume_offset = self.pos;
+        out
+    }
+
+    fn after_push(&mut self) {
+        if let StreamState::Poisoned(r) | StreamState::Rejected(r) = self.verifier.state() {
+            if !self.unpublished {
+                self.unpublished = true;
+                self.unpublish();
+                let w = match self.verifier.state() {
+                    StreamState::Rejected(_) => StreamWitness::DescriptorRejected(r),
+                    _ => StreamWitness::StreamPoisoned {
+                        reason: r,
+                        verified_bytes: self.verifier.verified_bytes(),
+                    },
+                };
+                self.witness(w);
+            }
+        }
+    }
+
+    fn unpublish(&mut self) {
+        self.index = ProgressiveIndex::new();
+        self.vectors.clear();
+        self.parses.clear();
+        self.deleted.clear();
+    }
+
+    fn apply(&mut self, ev: Event<'_>) {
+        match ev {
+            Event::DescriptorVerified {
+                descriptor_hash, ..
+            } => {
+                if let Some(d) = self.verifier.descriptor() {
+                    self.kinds = d
+                        .entries
+                        .iter()
+                        .map(|e| (e.seg_id, (e.seg_type, e.stored_len)))
+                        .collect();
+                }
+                self.witness(StreamWitness::DescriptorVerified(descriptor_hash));
+            }
+            Event::TableVerified { .. } => {}
+            Event::Chunk {
+                chunk,
+                segment_verified,
+                complete,
+                ..
+            } => {
+                self.on_bytes(chunk.seg_id, chunk.bytes, segment_verified);
+                if let Some(st) = complete {
+                    self.witness(StreamWitness::Complete(st));
+                }
+            }
+        }
+    }
+
+    fn on_bytes(&mut self, seg_id: u64, bytes: &[u8], done: bool) {
+        let Some(&(ty, stored)) = self.kinds.get(&seg_id) else {
+            return;
+        };
+        let p = self.parses.entry(seg_id).or_insert_with(|| match ty {
+            SEG_VEC => Parse::Vec(VecParse::new(stored)),
+            SEG_INDEX | SEG_JOURNAL => Parse::Buf(Vec::new()),
+            _ => Parse::Ignore,
+        });
+        match p {
+            Parse::Vec(vp) => {
+                let want = self.vectors.dimension_hint();
+                let vecs = &mut self.vectors;
+                vp.feed(bytes, want, &mut |id, v| {
+                    vecs.set_dim(v.len());
+                    vecs.insert(id, v);
+                });
+            }
+            Parse::Buf(b) => b.extend_from_slice(bytes),
+            Parse::Ignore => {}
+        }
+        if done {
+            match self.parses.remove(&seg_id) {
+                Some(Parse::Buf(b)) if ty == SEG_INDEX => self.publish_index(&b),
+                Some(Parse::Buf(b)) if ty == SEG_JOURNAL => self.apply_journal(&b),
+                _ => {}
+            }
+        }
+    }
+
+    fn apply_journal(&mut self, seg: &[u8]) {
+        let Some(p) = payload_of(seg) else { return };
+        if p.len() < 16 {
+            return;
+        }
+        let n = u32::from_le_bytes(p[..4].try_into().unwrap()) as usize;
+        for i in 0..n {
+            let at = 16 + i * 12;
+            let Some(e) = p.get(at..at + 12) else { break };
+            if e[0] == 0x01 {
+                self.deleted
+                    .insert(u64::from_le_bytes(e[4..12].try_into().unwrap()));
+            }
+        }
+    }
+
+    fn publish_index(&mut self, seg: &[u8]) {
+        let Some(p) = payload_of(seg) else { return };
+        if p.len() >= 4 && p[..4] == MAGIC_A {
+            let Some(a) = decode_a(p) else {
+                self.verifier.poison(ErrorCode::StreamTableInvalid);
+                return;
+            };
+            self.vectors.set_dim(a.dim);
+            for (id, v) in &a.anchors {
+                self.vectors.insert(*id, v);
+            }
+            self.index.layer_a = Some(a.layer);
+            self.witness(StreamWitness::LayerPublished(b'A'));
+        } else if self.index.layer_a.is_none() {
+            // B or C before A: nothing may be searched before its entry points.
+            self.verifier.poison(ErrorCode::StreamRequirementsUnmet);
+        } else if p.len() >= 4 && p[..4] == MAGIC_B {
+            match decode_b(p) {
+                Some(b) => {
+                    self.index.layer_b = Some(b);
+                    self.witness(StreamWitness::LayerPublished(b'B'));
+                }
+                None => {
+                    self.verifier.poison(ErrorCode::StreamTableInvalid);
+                }
+            }
+        } else {
+            match decode_graph(p) {
+                Some((g, _)) => {
+                    self.index.layer_c = Some(LayerC {
+                        full_adjacency: g.layers,
+                    });
+                    self.witness(StreamWitness::LayerPublished(b'C'));
+                }
+                None => {
+                    self.verifier.poison(ErrorCode::StreamTableInvalid);
+                }
+            }
+        }
+    }
+
+    /// k-NN over what is verified so far.
+    ///
+    /// Searches with `rvf-index`'s `ProgressiveIndex` over verified vectors
+    /// only. Before Layer A is published the answer is empty and `Unreliable`.
+    /// The estimates in `rvf_index::layers::available_recall` are never used
+    /// here; measure recall instead.
+    pub fn query(&self, q: &[f32], k: usize, ef: usize) -> StreamAnswer {
+        let t0 = std::time::Instant::now();
+        let layers = self.layers();
+        let state = self.verifier.state();
+        let sealed = state == StreamState::Complete;
+        let mut hits =
+            if layers.layer_a && !self.unpublished && q.len() == self.vectors.dimension_hint() {
+                self.index
+                    .search(q, k + self.deleted.len().min(k), ef, &self.vectors)
+            } else {
+                Vec::new()
+            };
+        hits.retain(|(id, _)| !self.deleted.contains(id) && self.vectors.contains(*id));
+        hits.truncate(k);
+        let rq = match (layers.layer_b, layers.layer_c) {
+            (_, true) => RetrievalQuality::Full,
+            (true, false) => RetrievalQuality::Partial,
+            _ => RetrievalQuality::LayerAOnly,
+        };
+        let quality = if hits.is_empty() {
+            ResponseQuality::Unreliable
+        } else if sealed && layers.layer_c {
+            ResponseQuality::Verified
+        } else {
+            ResponseQuality::Usable
+        };
+        let degradation = (!(sealed && layers.layer_c)).then_some(DegradationReport {
+            fallback_path: FallbackPath::None,
+            reason: DegradationReason::IndexNotLoaded { available: layers },
+            guarantee_lost: "index layers and vectors still arriving; not sealed",
+        });
+        StreamAnswer {
+            envelope: QualityEnvelope {
+                results: hits
+                    .into_iter()
+                    .map(|(id, distance)| SearchResult {
+                        id,
+                        distance,
+                        retrieval_quality: rq,
+                        metadata: None,
+                    })
+                    .collect(),
+                quality,
+                evidence: SearchEvidenceSummary {
+                    layers_used: layers,
+                    ..Default::default()
+                },
+                budgets: BudgetReport {
+                    total_us: t0.elapsed().as_micros() as u64,
+                    ..Default::default()
+                },
+                degradation,
+            },
+            sealed,
+            state,
+            verified_bytes: self.verifier.verified_bytes(),
+            visible_vectors: self.vectors.len(),
+        }
+    }
+}
+
+/// Payload slice of a buffered segment (`header + payload + ...`).
+fn payload_of(seg: &[u8]) -> Option<&[u8]> {
+    let len = u64::from_le_bytes(seg.get(0x10..0x18)?.try_into().ok()?) as usize;
+    seg.get(64..64usize.checked_add(len)?)
+}

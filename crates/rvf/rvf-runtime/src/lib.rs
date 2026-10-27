@@ -30,6 +30,7 @@ mod index_path;
 pub mod locking;
 pub mod membership;
 pub mod options;
+pub mod progressive_stream;
 #[cfg(feature = "qr")]
 pub mod qr_encode;
 pub mod qr_seed;
