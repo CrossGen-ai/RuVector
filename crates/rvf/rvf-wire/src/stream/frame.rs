@@ -103,10 +103,18 @@ impl FrameReader {
         mut data: &[u8],
         sink: &mut dyn FnMut(Result<Event<'_>, ErrorCode>),
     ) -> Result<(), ErrorCode> {
-        use super::StreamState::{Poisoned, Rejected};
+        use super::StreamState;
+        use StreamState::{Poisoned, Rejected};
         while !data.is_empty() {
             if matches!(v.state(), Poisoned(_) | Rejected(_)) {
                 return Err(ErrorCode::StreamPoisoned);
+            }
+            // Bytes after a finished stream are reported; the state is not changed.
+            if matches!(
+                v.state(),
+                StreamState::Complete | StreamState::CompleteUnverified
+            ) {
+                return Err(ErrorCode::StreamBadState);
             }
             if self.buf.is_empty() {
                 // Fast path: a whole frame sits at the front of `data`.
@@ -175,6 +183,9 @@ impl FrameReader {
         if payload > limit {
             return Err(v.poison(ErrorCode::StreamFrameSizeLie));
         }
-        Ok((hdr + payload) as usize)
+        match usize::try_from(hdr + payload) {
+            Ok(t) => Ok(t),
+            Err(_) => Err(v.poison(ErrorCode::StreamFrameSizeLie)),
+        }
     }
 }

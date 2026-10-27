@@ -108,22 +108,23 @@ fn epoch_expiry_and_pin() {
         decode_descriptor(&b5.descriptor, &p).unwrap_err(),
         E::StreamExpired
     );
-    let pin = |e: u64, h: Option<[u8; 32]>| {
-        move |_: &[u8; 16]| {
-            Some(EpochPin {
+    let sid = rvf_crypto::signer_key_id(&pk(1));
+    let pin = |e: u64, h: [u8; 32]| {
+        move |s: &[u8; 8], f: &[u8; 16]| {
+            (*s == sid && *f == FILE_ID).then_some(EpochPin {
                 epoch: e,
                 descriptor_hash: h,
             })
         }
     };
-    let f = pin(6, None);
+    let f = pin(6, [0; 32]);
     let mut p = policy(&keys);
     p.epoch_pin = Some(&f);
     assert_eq!(
         decode_descriptor(&b5.descriptor, &p).unwrap_err(),
         E::StreamStaleEpoch
     );
-    let f = pin(5, Some(b5.descriptor_hash));
+    let f = pin(5, b5.descriptor_hash);
     p.epoch_pin = Some(&f);
     assert!(decode_descriptor(&b5.descriptor, &p).is_ok());
     // same epoch, different content (different policy hash)
@@ -136,7 +137,7 @@ fn epoch_expiry_and_pin() {
         decode_descriptor(&b5b.descriptor, &p).unwrap_err(),
         E::StreamEpochConflict
     );
-    let f = pin(4, Some(b5.descriptor_hash));
+    let f = pin(4, b5.descriptor_hash);
     p.epoch_pin = Some(&f);
     assert!(decode_descriptor(&b5b.descriptor, &p).is_ok());
 }

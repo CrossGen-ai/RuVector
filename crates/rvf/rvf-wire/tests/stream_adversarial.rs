@@ -145,7 +145,7 @@ proptest! {
         let fr = apply(f.frames.clone(), &ops);
         let mut v = StreamVerifier::new(pol(f, budget));
         let (total, _) = check_released(f, &mut v, &fr);
-        if v.state() == StreamState::Complete {
+        if matches!(v.state(), StreamState::Complete | StreamState::CompleteUnverified) {
             prop_assert_eq!(total, f.body.len() as u64);
         }
     }

@@ -5,6 +5,8 @@ use super::common::*;
 use rvf_types::ErrorCode;
 use rvf_wire::stream::*;
 
+/// `file_id` the vector pins apply to (with the 0x2A test key).
+pub const PIN_FILE: [u8; 16] = *b"rvsd-test-file01";
 pub const STAGES: [u8; 7] = [0, 0, 2, 1, 3, 1, 2];
 
 #[derive(Clone)]
@@ -117,10 +119,12 @@ impl Pol {
             None => J::Null,
             Some(p) => J::Obj(vec![
                 ("epoch", n(p.epoch)),
+                ("descriptor_hash_hex", h(&p.descriptor_hash)),
                 (
-                    "descriptor_hash_hex",
-                    p.descriptor_hash.map_or(J::Null, |x| h(&x)),
+                    "signer_key_id_hex",
+                    h(&rvf_crypto::signer_key_id(&pk(0x2A))),
                 ),
+                ("file_id_hex", h(&PIN_FILE)),
             ]),
         };
         J::Obj(vec![
@@ -153,7 +157,14 @@ pub fn state_name(s: StreamState) -> String {
 
 pub fn run(p: &Pol, frames: &[Vec<u8>]) -> Out {
     let pin = p.pin;
-    let f = move |_: &[u8; 16]| pin;
+    let sid = rvf_crypto::signer_key_id(&pk(0x2A));
+    let f = move |sg: &[u8; 8], fid: &[u8; 16]| {
+        if *sg == sid && *fid == PIN_FILE {
+            pin
+        } else {
+            None
+        }
+    };
     let mut pol = StreamPolicy::new(&p.trusted);
     pol.fault_budget = p.budget;
     pol.now_ns = p.now;

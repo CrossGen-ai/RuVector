@@ -110,7 +110,7 @@ pub fn cases(m1f: &Stream, m1s: &Stream, m2f: &Stream, other: &Stream) -> Vec<Ca
             Pol {
                 pin: Some(EpochPin {
                     epoch: 8,
-                    descriptor_hash: None,
+                    descriptor_hash: [0x55; 32],
                 }),
                 ..p0.clone()
             },
@@ -124,7 +124,7 @@ pub fn cases(m1f: &Stream, m1s: &Stream, m2f: &Stream, other: &Stream) -> Vec<Ca
             Pol {
                 pin: Some(EpochPin {
                     epoch: 7,
-                    descriptor_hash: Some(other.bundle.descriptor_hash),
+                    descriptor_hash: other.bundle.descriptor_hash,
                 }),
                 ..p0.clone()
             },

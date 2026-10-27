@@ -1,6 +1,6 @@
 # ADR-353: RVF Stream Descriptor (RVSD) — verified streaming delivery (project Ofer)
 
-- **Status**: Proposed
+- **Status**: Proposed (implemented on `feat/ofer-core`; section 10 records where the code refines this text)
 - **Date**: 2026-10-26
 - **Deciders**: RuVector Architecture Team
 - **Related**: ADR-033, ADR-284, ADR-285, ADR-286, ADR-287, ADR-354; RVM ADR-149, ADR-155, ADR-160
@@ -55,7 +55,7 @@ Correction to the research dossier: its sketch listed a 96-byte entry that also 
 2. Entries are sorted by `body_offset`, start at 0, are **contiguous with no gap and no overlap**, and end exactly at `body_len`. Every body byte belongs to exactly one entry, so nothing can be smuggled between segments.
 3. `seg_id` values are unique; `stored_len >= 64` except for the `0xFE` pseudo-entry; `uncompressed_len` is bounded by policy.
 4. Per-class totals (executable, model, index, state) and per-segment maxima satisfy the signed `SizePolicy` (ADR-284 1.8, ADR-287). Executables are bounded by policy, not by the 1 MiB `MAX_MODULE_SIZE` constant, which remains the executor backstop (ADR-155 section 4).
-5. The signature verifies under a key in the receiver's trust set identified by `signer_key_id`; `epoch >= pinned[file_id]`; `expires_ns` is honored when a clock exists; `policy_hash` equals the expected value when the caller pins one.
+5. The signature verifies under a key in the receiver's trust set identified by `signer_key_id`; `epoch >= pin.epoch` where the pin is looked up by `(signer_key_id, file_id)` and carries the hash of the descriptor accepted at that epoch (an equal epoch requires an equal descriptor hash); `expires_ns` is honored when a clock exists; `policy_hash` equals the expected value when the caller pins one.
 6. `checksum_algo` 0 or 1 in any header of an executable or index segment is rejected at consumption time (only SHA-256-grade commitments authenticate bytes).
 
 ### 3. Chunk commitments
@@ -88,7 +88,8 @@ any --(hash mismatch beyond retry budget, duplicate/out-of-order beyond budget, 
 
 - Frames are accepted only for the exact next expected chunk of a segment; a duplicate or out-of-order chunk is a counted fault; exceeding the fault budget poisons the stream.
 - `Poisoned` is terminal: consumers are told to revoke granted capabilities, terminate instances started from the stream and drop index layers; a witness `StreamPoisoned(seg_id, chunk_index, reason)` is emitted.
-- The identity check (`SHA-256(body) == rvf_identity`) runs at completion over the verified bytes in file order. It is redundant with the signed chunk commitments and exists to preserve ADR-155 identity. It does not gate partial use.
+- The identity check (`SHA-256(body) == rvf_identity`) preserves ADR-155 identity. SHA-256 is sequential, so the verifier hashes only while chunks arrive contiguously in file order. A stream delivered in file order ends in `Complete` with the identity confirmed. Any other order (stage order, the point of M2) ends in the distinct terminal state `CompleteUnverified`: every chunk commitment is verified, but `rvf_identity` is **not** confirmed and must not be used as an identity until a storage-capable consumer re-reads its persisted body in file order and `finish_identity` succeeds (state becomes `Complete`; a mismatch makes it `Poisoned`). The unsafe path is therefore not the default one: code that waits for `Complete` cannot skip the check.
+- `Complete`, `CompleteUnverified` and `Suspended` are never overwritten by `Poisoned`; bytes arriving after a finished stream are refused (`StreamBadState`) without changing state. `Rejected` and `Poisoned` are terminal.
 
 ### 6. Consumption rules (no unverified bytes are ever used)
 
@@ -102,7 +103,7 @@ any --(hash mismatch beyond retry budget, duplicate/out-of-order beyond budget, 
 | Threat | Control |
 | --- | --- |
 | Truncation | signed `body_len`, `seg_count`, contiguity; only `Complete` when all verified; partial results are marked `sealed = false` |
-| Replay of an old valid version | `epoch` pinned per `file_id`; optional `expires_ns`; clockless targets use a monotone counter anchored in the witness chain |
+| Replay of an old valid version | `(epoch, descriptor_hash)` pinned per `(signer_key_id, file_id)`; optional `expires_ns`; clockless targets use a monotone counter anchored in the witness chain |
 | Reorder, duplicate, insert | exact-next-chunk rule; leaf binds `(file_id, seg_id, chunk_index, chunk_len)` |
 | Mid-stream substitution | per-chunk SHA-256 commitments; header `content_hash` is demoted to a cross-check |
 | Splice between files signed by one key | `file_id` in every leaf |
@@ -122,6 +123,20 @@ any --(hash mismatch beyond retry budget, duplicate/out-of-order beyond budget, 
 
 `rvf-types`: `StreamDescriptor`, `StreamEntry`, error codes beside `UnsignedManifest = 0x0800`. `rvf-crypto`: `sign_descriptor`, `verify_descriptor`, `leaf_hash`, `chunk_list_hash`. `rvf-wire`: `stream::{decode_descriptor, StreamVerifier::{new, push}}`, no_std plus alloc, push-style like `wasmparser::Parser::parse(data, eof)`. `rvf-runtime`: `StreamIngest` feeding `ProgressiveIndex`; `RvfStore::open_with_policy` (ADR-033, ADR-354). `rvf-server`: `GET /v1/stream/descriptor` and `GET /v1/stream/body` with stage-ordered frames (TCP types `0x05/0x85` are unused). RVM consumers are specified in RVM ADR-160.
 
+### 10. Implementation notes (refinements recorded from the code; normative for interop)
+
+Vectors: `crates/rvf/tests/vectors/rvsd-v1-vectors.json` with its README pins every byte below.
+
+- **Errors**: `rvf-types` `ErrorCode` `0x0805..=0x0819` (`0x0818` reserved, unassigned), plus the existing `UnknownSigner` 0x0802 for a signer outside the trust set. The first refused frame reports its specific cause; poisoning by an exhausted fault budget keeps that cause.
+- **Descriptor checks, in order**: size cap and fixed header; `seg_count` cap; exact length `0x90 + 72*seg_count + 66`; signature (signed message is the domain tag, a NUL byte, then every byte before the 64-byte signature including `sig_len`); expiry; expected `policy_hash`; epoch pin; table. The entry parser only sees signed bytes.
+- **Extra descriptor rules**: `rvf_identity` is zero when `identity_present` is clear; at least one entry; `stage < 32`; a segment never requires its own stage and stage requirements are acyclic; `StreamEntry.flags` must be zero; the `0xFE` root-page pseudo-entry must be last, exactly 4096 bytes, `uncompressed_len` 0, and its first chunk must start with the Level-0 root magic.
+- **Fault model**: a frame whose declared size contradicts the signed descriptor, a malformed table size, or a frame shorter than its header poisons the stream at once (`StreamFrameSizeLie`). Duplicate, out-of-order, unknown-segment, unknown-type and chunk-before-table frames, leaf or table hash mismatches, and a chunk whose `requires_mask` stages are not fully verified (`StreamRequirementsUnmet`; the chunk cannot be held because only one frame is buffered) are counted faults; exceeding `fault_budget` poisons. A refused frame never advances the expected chunk.
+- **Algorithm floor**: after chunk 0 of an executable (Wasm, Kernel, eBPF) or index segment is verified, its segment header must carry the right magic and `seg_type`, and `checksum_algo` 0 or 1 poisons the stream (`StreamWeakChecksum`).
+- **Memory**: the released `VerifiedChunk` borrows the frame passed to `push` (hashed in place); `FrameReader` buffers at most one frame, admitting it only after its declared size is checked against limits derived from the signed descriptor, with the total computed in checked `usize` (a 32-bit overflow is a size lie). Chunk tables held at once are capped by `max_outstanding_table_bytes` (default 64 MiB); a table frame beyond the cap is refused before allocation.
+- **Hashing**: SHA-256 is the portable `rvf_types::sha256` by default; the `fast-sha256` feature of `rvf-crypto` (on in `rvf-wire`) uses the `sha2` crate with runtime CPU detection. Outputs are identical. Measured on one machine: portable 0.45 GB/s, `sha2` 2.7 GB/s, verifier 1.35 GB/s (it hashes each chunk twice in file order: leaf and identity).
+- **Epoch pin**: `EpochPin { epoch, descriptor_hash }`, hash mandatory, looked up by `(signer_key_id, file_id)`. Updating the pin after acceptance is the caller's job.
+- **Resume**: `end_of_input` moves `Receiving` to `Suspended`; `resume` returns to `Receiving`; progress is kept per chunk.
+
 ## Acceptance
 
 Each test fails closed and emits a witness. Shared known-answer vectors (`rvsd-v1-vectors.json`, generated here, consumed by `ruvnet/rvm`) pin the byte layout so the two independent implementations cannot drift.
@@ -129,10 +144,10 @@ Each test fails closed and emits a witness. Shared known-answer vectors (`rvsd-v
 - Any single-bit flip in the descriptor, a table frame or a chunk is rejected and nothing from the affected segment is released after the flip.
 - Truncation at every byte offset never reaches `Complete`.
 - Permutation, duplication, deletion or insertion of frames never reaches `Complete` with different bytes.
-- An older epoch, or an equal epoch with different content, is rejected.
+- An older epoch, or an equal epoch with a different descriptor hash, is rejected; a pin set for one signer does not constrain another signer's lineage.
 - A validly hashed chunk from another file signed by the same key is rejected.
 - A descriptor that lies about sizes is rejected before allocation (allocator-counting test).
-- Whole-buffer verification and the stream verifier agree on accept and reject for a corpus, fed in file order and in stage order.
+- Whole-buffer verification and the stream verifier agree on accept and reject for a corpus, fed in file order (`Complete`) and in stage order (`CompleteUnverified`, then `finish_identity`).
 - Descriptor decoder, frame state machine and chunk-split independence are fuzzed.
 
 ## Consequences

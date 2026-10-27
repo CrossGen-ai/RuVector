@@ -29,8 +29,8 @@ otherwise the chunk-list hash. `frames[i].hex` is the exact frame (type byte
 included) and `frames[i].expect` the event a verifier with the default policy
 (`fault_budget` 4, trusted key = test key) must produce for it:
 `DescriptorVerified`, `TableVerified`, `Chunk` (with `segment_verified`,
-`stage_verified`, and `complete` = `Verified`, `Unverifiable` or null) or `Error`.
-`final_state` is the verifier state after the last frame.
+`stage_verified`, and `complete` = `Verified`, `Unverifiable`, `NotPresent` or null) or `Error`.
+`final_state` is the verifier state after the last frame: `Complete` for the file-order streams, `CompleteUnverified` for the `*-stage` streams (identity not confirmable without the persisted body).
 
 ## Frames
 
@@ -56,16 +56,17 @@ included) and `frames[i].expect` the event a verifier with the default policy
 
 ## Negative cases
 
-Each entry in `negative` names a base `stream`, a `policy` (trust set, `fault_budget`, `epoch_pin`, `now_ns`; all other limits default), and `edits` applied in order to the base frame list:
+Each entry in `negative` names a base `stream`, a `policy` (trust set, `fault_budget`, `epoch_pin`, `now_ns`; all other limits default). An `epoch_pin` applies only to the given `signer_key_id_hex` and `file_id_hex`, and its `descriptor_hash_hex` is mandatory, and `edits` applied in order to the base frame list:
 `xor {frame, offset, mask}` (offsets are into the frame bytes), `drop {frame}`, `dup {frame}` (insert a copy after), `swap {a, b}`, `keep_first {count}`, `insert {at, hex}`, `replace {frame, hex}`, `cut_tail_bytes {frame, bytes}`.
 `expect` gives the `first_error_frame` index, `reason` and `code` (the error code of the first refused frame), the `final_state` (`Rejected:<reason>`, `Poisoned:<reason>`, `Receiving`), and how many chunks and bytes were released. Every frame after a poisoning must be refused with `StreamPoisoned` (0x0817) and release nothing.
 
 ## Rules the vectors rely on (clarifications of ADR-353)
 
 * Frames of a size that contradicts the signed descriptor, a chunk table whose `n` is wrong, and a frame shorter than its own header poison the stream at once (`StreamFrameSizeLie`). Duplicate, out-of-order, unknown-segment, unknown-type and chunk-before-table frames are counted faults (`StreamUnexpectedFrame`); a leaf or table hash mismatch is a counted fault; a chunk whose `requires_mask` stages are not fully verified is a counted fault (`StreamRequirementsUnmet`). The stream is poisoned when the fault count exceeds `fault_budget`. A refused frame never advances the expected chunk.
-* `rvf_identity` must be all zero when `identity_present` is clear.
+* `rvf_identity` must be all zero when `identity_present` is clear. `StreamEntry.flags` must be zero. The root-page pseudo-entry (type 254) must be last, 4096 bytes, `uncompressed_len` 0, and start with the Level-0 root magic bytes `30 4d 56 52`.
+* Complete, CompleteUnverified and Suspended are never turned into Poisoned; further bytes are refused with `StreamBadState`. A pin and chunk-table memory are bounded: tables held at once are capped by `max_outstanding_table_bytes` (default 64 MiB, `StreamLimitExceeded`).
 * The running identity SHA-256 is fed only while chunks arrive contiguously in file order. Otherwise `complete` is `Unverifiable` (the consumer may re-read its persisted body and compare).
-* Error codes are `rvf-types` `ErrorCode` values `0x0805..=0x0819` plus the existing `UnknownSigner` 0x0802; see `rvf-types/src/error.rs`.
+* Error codes are `rvf-types` `ErrorCode` values `0x0805..=0x0819` plus the existing `UnknownSigner` 0x0802; see `rvf-types/src/error.rs` (0x0818 is reserved).
 
 ---
 

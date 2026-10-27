@@ -49,7 +49,7 @@ fn stage_order_with_requires_mask_completes_unverifiable_identity() {
     let keys = [pk(1)];
     let r = run_frames(b.frames_stage_order(&body), policy(&keys));
     assert!(r.errors.is_empty(), "{:?}", r.errors);
-    assert_eq!(r.state, StreamState::Complete);
+    assert_eq!(r.state, StreamState::CompleteUnverified);
     assert_eq!(r.complete, Some(IdentityStatus::Unverifiable));
     assert_subset(&r, &body);
     // File order breaks the requires gate: first wasm chunk needs stages 0,1.
@@ -76,6 +76,7 @@ fn finish_identity_over_persisted_body() {
         v.push(&f).unwrap();
     }
     assert_eq!(v.identity_status(), Some(IdentityStatus::Unverifiable));
+    assert_eq!(v.state(), StreamState::CompleteUnverified);
     let mut bad = body.clone();
     bad[10] ^= 1;
     let mut v2 = StreamVerifier::new(policy(&keys));
@@ -89,6 +90,7 @@ fn finish_identity_over_persisted_body() {
         }),
         Err(E::StreamIdentityMismatch)
     );
+    assert_eq!(v2.state(), StreamState::Poisoned(E::StreamIdentityMismatch));
     assert_eq!(
         v.finish_identity(|o, buf| {
             buf.copy_from_slice(&body[o as usize..o as usize + buf.len()]);
@@ -97,6 +99,7 @@ fn finish_identity_over_persisted_body() {
         Ok(())
     );
     assert_eq!(v.identity_status(), Some(IdentityStatus::Verified));
+    assert_eq!(v.state(), StreamState::Complete);
 }
 
 fn first_chunk_frame(frames: &[Vec<u8>], seg_id: u64, idx: u32) -> usize {

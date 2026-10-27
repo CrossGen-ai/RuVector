@@ -28,7 +28,7 @@ fuzz_target!(|i: Input| {
             total += chunk.bytes.len();
         }
     }
-    if v.state() == StreamState::Complete {
+    if matches!(v.state(), StreamState::Complete | StreamState::CompleteUnverified) {
         assert_eq!(total, b.body.len());
     }
 });

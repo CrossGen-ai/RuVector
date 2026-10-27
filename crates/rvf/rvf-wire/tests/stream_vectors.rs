@@ -59,7 +59,13 @@ fn entry_json(e: &StreamEntry, h_: &StreamHeader, body: &[u8]) -> J {
 fn stream_json(st: &Stream, body: &[u8]) -> J {
     let out = run(&Pol::std(4), &st.frames);
     assert!(
-        out.errors.is_empty() && out.state == "Complete",
+        out.errors.is_empty()
+            && out.state
+                == if st.name.ends_with("stage") {
+                    "CompleteUnverified"
+                } else {
+                    "Complete"
+                },
         "{} {:?}",
         st.name,
         out.errors

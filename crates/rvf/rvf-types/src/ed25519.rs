@@ -76,7 +76,7 @@ pub fn ed25519_verify(
         return false;
     };
     let sig = DalekSignature::from_bytes(signature);
-    verifying_key.verify(message, &sig).is_ok()
+    verifying_key.verify_strict(message, &sig).is_ok()
 }
 
 /// Constant-time comparison of two 64-byte signatures.

@@ -241,3 +241,52 @@ fn p7_whole_stream_peak_is_descriptor_plus_one_frame_plus_tables() {
         body.len()
     );
 }
+
+/// F-17: chunk tables of all segments cannot be held at once beyond the policy cap.
+#[test]
+fn p7_outstanding_table_bytes_are_capped_before_allocation() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    use rvf_types::SegmentFlags as F;
+    let mut body = Vec::new();
+    for i in 0..8u64 {
+        // 20 KiB payload, 4 KiB chunks: 6 chunks, a 192-byte table each
+        body.extend(rvf_wire::writer::write_segment(
+            0x01,
+            &vec![i as u8; 20_000],
+            F::empty(),
+            i + 1,
+        ));
+    }
+    let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
+    let keys = [pk(1)];
+    let mut pol = StreamPolicy::new(&keys);
+    pol.max_outstanding_table_bytes = 3 * 32 * 6; // room for exactly 3 tables
+    pol.fault_budget = 100;
+    let mut v = StreamVerifier::from_descriptor(&b.descriptor, pol).unwrap();
+    let tables: Vec<Vec<u8>> = (0..b.entries.len())
+        .map(|i| b.segment_frames(&body, i).remove(0))
+        .collect();
+    let (_, base) = peak_of(|| {
+        for t in &tables[..3] {
+            v.push(t).unwrap();
+        }
+    });
+    assert!(
+        base <= 3 * 32 * 6 + 256,
+        "accepted tables used {base} bytes"
+    );
+    for t in &tables[3..] {
+        let (r, peak) = peak_of(|| v.push(t));
+        assert_eq!(r.err(), Some(E::StreamLimitExceeded));
+        assert_eq!(peak, 0, "a refused table allocated memory");
+    }
+    // finishing a segment frees its table budget
+    let first = b.segment_frames(&body, 0);
+    for f in &first[1..] {
+        v.push(f).unwrap();
+    }
+    assert!(v.push(&tables[3]).is_ok());
+}

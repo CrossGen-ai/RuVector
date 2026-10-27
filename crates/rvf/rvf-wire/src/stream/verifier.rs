@@ -15,7 +15,7 @@ use rvf_crypto::StreamSha256 as Sha256;
 use rvf_crypto::{chunk_list_hash_flat, leaf_hash};
 use rvf_types::sha256::ct_eq;
 use rvf_types::stream::*;
-use rvf_types::{ErrorCode, SEGMENT_MAGIC};
+use rvf_types::{ErrorCode, ROOT_MANIFEST_MAGIC_BYTES, SEGMENT_MAGIC};
 
 extern crate alloc;
 
@@ -28,8 +28,14 @@ pub enum StreamState {
     Receiving,
     /// Input ended early; `resume` continues at chunk granularity.
     Suspended,
-    /// Every segment verified and the byte count matches.
+    /// Every segment verified, the byte count matches and the body identity
+    /// is confirmed (or the descriptor carries none). Terminal and safe.
     Complete,
+    /// Every segment verified, but chunks arrived out of file order so
+    /// `rvf_identity` is NOT confirmed. `rvf_identity` must not be used as an
+    /// identity until [`StreamVerifier::finish_identity`] moves this to
+    /// `Complete`. The chunk commitments themselves are verified.
+    CompleteUnverified,
     /// The descriptor was refused (terminal).
     Rejected(ErrorCode),
     /// Terminal failure: revoke, terminate, drop layers.
@@ -117,6 +123,7 @@ pub struct StreamVerifier<'p> {
     left: usize,
     faults: u32,
     verified_bytes: u64,
+    table_bytes: u64,
     identity: Option<IdentityTracker>,
     identity_status: Option<IdentityStatus>,
     max_chunk_len: u64,
@@ -145,6 +152,7 @@ impl<'p> StreamVerifier<'p> {
             left: 0,
             faults: 0,
             verified_bytes: 0,
+            table_bytes: 0,
             identity: None,
             identity_status: None,
             max_chunk_len: 0,
@@ -203,7 +211,10 @@ impl<'p> StreamVerifier<'p> {
 
     /// Terminal failure; used by the frame reader for size lies.
     pub fn poison(&mut self, code: ErrorCode) -> ErrorCode {
-        if !matches!(self.state, StreamState::Rejected(_)) {
+        if matches!(
+            self.state,
+            StreamState::AwaitDescriptor | StreamState::Receiving | StreamState::Poisoned(_)
+        ) {
             self.state = StreamState::Poisoned(code);
         }
         code
@@ -325,6 +336,10 @@ impl<'p> StreamVerifier<'p> {
         if n != s.n {
             return Err(self.poison(ErrorCode::StreamFrameSizeLie));
         }
+        let want = 32 * n as u64;
+        if self.table_bytes + want > self.policy.max_outstanding_table_bytes {
+            return Err(self.fault(ErrorCode::StreamLimitExceeded));
+        }
         let d = self.desc.as_ref().expect("descriptor installed");
         let ok = chunk_list_hash_flat(&d.header.file_id, seg_id, &f[13..])
             .is_some_and(|h| ct_eq(&h, &d.entries[i].chunk_table_hash));
@@ -332,6 +347,7 @@ impl<'p> StreamVerifier<'p> {
             return Err(self.fault(ErrorCode::StreamTableHashMismatch));
         }
         self.segs[i].leaves = Some(f[13..].to_vec());
+        self.table_bytes += want;
         Ok(Event::TableVerified { seg_id })
     }
 
@@ -390,6 +406,12 @@ impl<'p> StreamVerifier<'p> {
                 return Err(self.poison(ErrorCode::StreamWeakChecksum));
             }
         }
+        if idx == 0
+            && e.seg_type == STREAM_SEG_TYPE_ROOT_PAGE
+            && bytes[..4] != ROOT_MANIFEST_MAGIC_BYTES
+        {
+            return Err(self.poison(ErrorCode::StreamTableInvalid));
+        }
         let body_offset = e.body_offset + idx as u64 * h.chunk_size().unwrap_or(0);
         if let Some(t) = &mut self.identity {
             if t.feasible && t.pos == body_offset {
@@ -408,7 +430,9 @@ impl<'p> StreamVerifier<'p> {
         s.next += 1;
         if s.next == s.n {
             s.done = true;
-            s.leaves = None;
+            if s.leaves.take().is_some() {
+                self.table_bytes -= 32 * s.n as u64;
+            }
             segment_verified = true;
             self.left -= 1;
             let st = e.stage as usize;
@@ -453,7 +477,11 @@ impl<'p> StreamVerifier<'p> {
             Some(_) => IdentityStatus::Unverifiable,
         };
         self.identity_status = Some(st);
-        self.state = StreamState::Complete;
+        self.state = if st == IdentityStatus::Unverifiable {
+            StreamState::CompleteUnverified
+        } else {
+            StreamState::Complete
+        };
         Ok(st)
     }
 
@@ -465,7 +493,7 @@ impl<'p> StreamVerifier<'p> {
         &mut self,
         mut read_at: impl FnMut(u64, &mut [u8]) -> bool,
     ) -> Result<(), ErrorCode> {
-        if self.state != StreamState::Complete
+        if self.state != StreamState::CompleteUnverified
             || self.identity_status != Some(IdentityStatus::Unverifiable)
         {
             return Err(ErrorCode::StreamBadState);
@@ -483,9 +511,12 @@ impl<'p> StreamVerifier<'p> {
             pos += n as u64;
         }
         if !ct_eq(&hasher.finalize(), &h.rvf_identity) {
-            return Err(self.poison(ErrorCode::StreamIdentityMismatch));
+            // Explicit retroactive revocation of an unverified artifact.
+            self.state = StreamState::Poisoned(ErrorCode::StreamIdentityMismatch);
+            return Err(ErrorCode::StreamIdentityMismatch);
         }
         self.identity_status = Some(IdentityStatus::Verified);
+        self.state = StreamState::Complete;
         Ok(())
     }
 }

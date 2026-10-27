@@ -56,12 +56,9 @@ fn stream_accepts(body: &[u8], frames: impl Iterator<Item = Vec<u8>>) -> bool {
             return false;
         }
     }
-    if v.state() != StreamState::Complete {
-        return false;
-    }
-    match v.identity_status() {
-        Some(IdentityStatus::Verified) => true,
-        Some(IdentityStatus::Unverifiable) => v
+    match (v.state(), v.identity_status()) {
+        (StreamState::Complete, Some(IdentityStatus::Verified)) => true,
+        (StreamState::CompleteUnverified, Some(IdentityStatus::Unverifiable)) => v
             .finish_identity(|o, buf| {
                 buf.copy_from_slice(&body[o as usize..o as usize + buf.len()]);
                 true

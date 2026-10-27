@@ -24,17 +24,18 @@ pub use verifier::{Event, IdentityStatus, StreamState, StreamVerifier, VerifiedC
 
 use rvf_types::stream::StreamClass;
 
-/// Epoch pin lookup by `file_id`.
-pub type EpochPinFn<'a> = dyn Fn(&[u8; 16]) -> Option<EpochPin> + 'a;
+/// Epoch pin lookup by `(signer_key_id, file_id)`: a pin set for one signer
+/// never constrains another signer's lineage.
+pub type EpochPinFn<'a> = dyn Fn(&[u8; 8], &[u8; 16]) -> Option<EpochPin> + 'a;
 
 /// A pinned `(epoch, descriptor hash)` for one `file_id`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EpochPin {
     /// Highest accepted epoch.
     pub epoch: u64,
-    /// Hash of the descriptor accepted at that epoch, if known. At an equal
+    /// Hash of the descriptor accepted at that epoch (mandatory). At an equal
     /// epoch a descriptor with a different hash is a conflict.
-    pub descriptor_hash: Option<[u8; 32]>,
+    pub descriptor_hash: [u8; 32],
 }
 
 /// Receiver policy for descriptors and streams.
@@ -62,6 +63,10 @@ pub struct StreamPolicy<'a> {
     pub expected_policy_hash: Option<[u8; 32]>,
     /// Counted faults tolerated before the stream is poisoned.
     pub fault_budget: u32,
+    /// Cap on chunk-table bytes held at once (tables of segments whose table
+    /// was accepted but which are not yet fully verified). A table frame that
+    /// would exceed it is refused before anything is allocated.
+    pub max_outstanding_table_bytes: u64,
 }
 
 impl<'a> StreamPolicy<'a> {
@@ -79,6 +84,7 @@ impl<'a> StreamPolicy<'a> {
             now_ns: None,
             expected_policy_hash: None,
             fault_budget: 4,
+            max_outstanding_table_bytes: 64 << 20,
         }
     }
 

@@ -79,11 +79,11 @@ pub fn decode_descriptor(
     }
     let dhash = descriptor_hash(bytes);
     if let Some(lookup) = policy.epoch_pin {
-        if let Some(pin) = lookup(&h.file_id) {
+        if let Some(pin) = lookup(&h.signer_key_id, &h.file_id) {
             if h.epoch < pin.epoch {
                 return Err(ErrorCode::StreamStaleEpoch);
             }
-            if h.epoch == pin.epoch && pin.descriptor_hash.is_some_and(|x| x != dhash) {
+            if h.epoch == pin.epoch && pin.descriptor_hash != dhash {
                 return Err(ErrorCode::StreamEpochConflict);
             }
         }
@@ -121,8 +121,14 @@ fn parse_table(
         if e.body_offset != expect_off || e.stored_len == 0 {
             return Err(Invalid);
         }
+        if e.flags != 0 {
+            return Err(Invalid);
+        }
         if e.seg_type == STREAM_SEG_TYPE_ROOT_PAGE {
-            if i + 1 != h.seg_count as usize {
+            if i + 1 != h.seg_count as usize
+                || e.stored_len != rvf_types::ROOT_MANIFEST_SIZE as u64
+                || e.uncompressed_len != 0
+            {
                 return Err(Invalid);
             }
         } else if e.stored_len < 64 {
