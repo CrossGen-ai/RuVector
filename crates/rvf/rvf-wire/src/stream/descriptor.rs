@@ -1,7 +1,7 @@
 //! Descriptor decoding: fixed layout, length-checked before any allocation
 //! proportional to declared counts, authenticated before the table is parsed.
 
-use super::StreamPolicy;
+use super::{EpochPin, StreamPolicy};
 use alloc::vec::Vec;
 use rvf_crypto::{descriptor_hash, signer_key_id, verify_descriptor};
 use rvf_types::stream::*;
@@ -78,8 +78,8 @@ pub fn decode_descriptor(
         }
     }
     let dhash = descriptor_hash(bytes);
-    if let Some(lookup) = policy.epoch_pin {
-        if let Some(pin) = lookup(&h.signer_key_id, &h.file_id) {
+    let check = |pin: Option<EpochPin>| -> Result<(), ErrorCode> {
+        if let Some(pin) = pin {
             if h.epoch < pin.epoch {
                 return Err(ErrorCode::StreamStaleEpoch);
             }
@@ -87,6 +87,13 @@ pub fn decode_descriptor(
                 return Err(ErrorCode::StreamEpochConflict);
             }
         }
+        Ok(())
+    };
+    if let Some(lookup) = policy.epoch_pin {
+        check(lookup(&h.signer_key_id, &h.file_id))?;
+    }
+    if let Some(store) = policy.pins {
+        check(store.get(&h.signer_key_id, &h.file_id))?;
     }
 
     let entries = parse_table(&bytes[STREAM_HEADER_SIZE..sig_len_at], &h, policy)?;

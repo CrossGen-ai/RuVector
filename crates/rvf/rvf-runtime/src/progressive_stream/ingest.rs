@@ -104,12 +104,14 @@ pub struct StreamIngest<'p> {
     deleted: HashSet<u64>,
     witnesses: Vec<StreamWitness>,
     unpublished: bool,
+    pins: Option<&'p dyn rvf_wire::stream::PinStore>,
 }
 
 impl<'p> StreamIngest<'p> {
     /// A consumer waiting for the descriptor frame.
     pub fn new(policy: StreamPolicy<'p>) -> Self {
         Self {
+            pins: policy.pins,
             verifier: StreamVerifier::new(policy),
             buf: Vec::new(),
             pos: 0,
@@ -181,6 +183,11 @@ impl<'p> StreamIngest<'p> {
             self.witness(StreamWitness::Resumed);
         }
         ok
+    }
+
+    /// Re-check the epoch pin against `store` (stale-epoch error if the lineage advanced).
+    pub fn recheck_pin(&self, store: &dyn rvf_wire::stream::PinStore) -> Result<(), ErrorCode> {
+        self.verifier.recheck_pin(store)
     }
 
     /// Re-read the persisted body in file order and settle an `Unverifiable`
@@ -424,7 +431,12 @@ impl<'p> StreamIngest<'p> {
         let t0 = std::time::Instant::now();
         let layers = self.layers();
         let state = self.verifier.state();
-        let sealed = state == StreamState::Complete;
+        // `sealed` is a derived release: re-check the epoch pin now (ADR-353 section 7),
+        // so a session superseded since completion is never reported as final.
+        let sealed = state == StreamState::Complete
+            && self
+                .pins
+                .is_none_or(|st| self.verifier.recheck_pin(st).is_ok());
         let mut hits =
             if layers.layer_a && !self.unpublished && q.len() == self.vectors.dimension_hint() {
                 self.index

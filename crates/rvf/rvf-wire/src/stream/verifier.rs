@@ -8,7 +8,7 @@
 //! (descriptor size cap, per-segment size cap), never by a declared frame size.
 
 use super::frame::{FRAME_CHUNK, FRAME_CHUNK_TABLE, FRAME_DESCRIPTOR};
-use super::{decode_descriptor, StreamPolicy, VerifiedDescriptor};
+use super::{decode_descriptor, EpochPin, PinConflict, PinStore, StreamPolicy, VerifiedDescriptor};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use rvf_crypto::StreamSha256 as Sha256;
@@ -135,6 +135,7 @@ pub struct StreamVerifier<'p> {
     table_bytes: u64,
     dup_cap: u64,
     dups: u64,
+    admitted_pin: Option<EpochPin>,
     identity: Option<IdentityTracker>,
     identity_status: Option<IdentityStatus>,
     max_chunk_len: u64,
@@ -166,6 +167,7 @@ impl<'p> StreamVerifier<'p> {
             table_bytes: 0,
             dup_cap: 0,
             dups: 0,
+            admitted_pin: None,
             identity: None,
             identity_status: None,
             max_chunk_len: 0,
@@ -291,6 +293,10 @@ impl<'p> StreamVerifier<'p> {
             .policy
             .max_duplicate_frames
             .unwrap_or(4 * total_chunks + 64);
+        self.admitted_pin = self
+            .policy
+            .pins
+            .and_then(|st| st.get(&h.signer_key_id, &h.file_id));
         self.left = d.entries.len();
         if h.flags & STREAM_FLAG_IDENTITY_PRESENT != 0 {
             self.identity = Some(IdentityTracker {
@@ -538,6 +544,9 @@ impl<'p> StreamVerifier<'p> {
         if self.verified_bytes != h.body_len {
             return Err(ErrorCode::StreamTableInvalid);
         }
+        if let Some(store) = self.policy.pins {
+            self.recheck_pin(store)?;
+        }
         let st = match self.identity.take() {
             None => IdentityStatus::NotPresent,
             Some(t) if t.feasible && t.pos == h.body_len => {
@@ -557,10 +566,53 @@ impl<'p> StreamVerifier<'p> {
         Ok(st)
     }
 
-    /// For storage-capable consumers that received out of file order: re-read
-    /// the persisted body in file order (`read_at(offset, buf)` must fill
-    /// `buf` or return false) and check `SHA-256 == rvf_identity`. Uses a
-    /// 64 KiB buffer. Mismatch poisons the stream.
+    /// Re-check the epoch pin against `store` now (ADR-353 section 7). Consumers call
+    /// this before publishing anything derived from the stream as final; it runs
+    /// automatically at completion when the policy carries a store. A session whose
+    /// lineage advanced while it was running gets `StreamStaleEpoch` (or
+    /// `StreamEpochConflict` for an equal epoch with a different descriptor).
+    /// Does not change the state.
+    pub fn recheck_pin(&self, store: &dyn PinStore) -> Result<(), ErrorCode> {
+        let d = self.desc.as_ref().ok_or(ErrorCode::StreamBadState)?;
+        let h = &d.header;
+        match store.get(&h.signer_key_id, &h.file_id) {
+            Some(p) if h.epoch < p.epoch => Err(ErrorCode::StreamStaleEpoch),
+            Some(p) if h.epoch == p.epoch && p.descriptor_hash != d.descriptor_hash => {
+                Err(ErrorCode::StreamEpochConflict)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Record this lineage's pin after the stream is `Complete` with the identity
+    /// confirmed. Compare-and-set against the pin seen at admission, so a concurrent
+    /// session that advanced first wins and this one gets a typed error.
+    pub fn commit_pin(&self, store: &dyn PinStore) -> Result<(), ErrorCode> {
+        if self.state != StreamState::Complete {
+            return Err(ErrorCode::StreamBadState);
+        }
+        let d = self.desc.as_ref().ok_or(ErrorCode::StreamBadState)?;
+        let h = &d.header;
+        let new = EpochPin {
+            epoch: h.epoch,
+            descriptor_hash: d.descriptor_hash,
+        };
+        store
+            .advance(&h.signer_key_id, &h.file_id, self.admitted_pin, new)
+            .map_err(|PinConflict { current }| match current {
+                Some(c) if c.epoch > h.epoch => ErrorCode::StreamStaleEpoch,
+                _ => ErrorCode::StreamEpochConflict,
+            })
+    }
+
+    /// For storage-capable consumers that received out of file order.
+    ///
+    /// Re-reads the persisted body in file order through `read_at(offset, buf)`
+    /// (which must fill `buf` or return false) in 64 KiB pieces and **re-verifies
+    /// it against the signed commitments chunk by chunk** (every leaf must equal the
+    /// verified leaf), hashing it for `SHA-256 == rvf_identity` in the same pass.
+    /// Only then, and after re-checking the pin, does `CompleteUnverified` become
+    /// `Complete`. A host that supplies different bytes poisons the stream.
     pub fn finish_identity(
         &mut self,
         mut read_at: impl FnMut(u64, &mut [u8]) -> bool,
@@ -570,22 +622,49 @@ impl<'p> StreamVerifier<'p> {
         {
             return Err(ErrorCode::StreamBadState);
         }
-        let h = self.desc.as_ref().expect("descriptor installed").header;
-        let mut hasher = Sha256::new();
+        let (h, entries) = {
+            let d = self.desc.as_ref().expect("descriptor installed");
+            (d.header, d.entries.clone())
+        };
+        let mut ident = Sha256::new();
         let mut buf = alloc::vec![0u8; 65536];
-        let mut pos = 0u64;
-        while pos < h.body_len {
-            let n = (h.body_len - pos).min(buf.len() as u64) as usize;
-            if !read_at(pos, &mut buf[..n]) {
-                return Err(ErrorCode::StreamBadState);
+        for (i, e) in entries.iter().enumerate() {
+            let n = h.chunk_count(e.stored_len).unwrap_or(1);
+            for idx in 0..n {
+                let len = h.chunk_len(e.stored_len, idx).unwrap_or(0);
+                let mut lh = rvf_crypto::LeafHasher::new(&h.file_id, e.seg_id, idx, len);
+                let mut off = e.body_offset + idx as u64 * h.chunk_size().unwrap_or(0);
+                let mut left = len;
+                while left > 0 {
+                    let k = left.min(buf.len() as u64) as usize;
+                    if !read_at(off, &mut buf[..k]) {
+                        return Err(ErrorCode::StreamBadState);
+                    }
+                    lh.update(&buf[..k]);
+                    ident.update(&buf[..k]);
+                    off += k as u64;
+                    left -= k as u64;
+                }
+                let mut want = e.chunk_table_hash;
+                if let Some(l) = &self.segs[i].leaves {
+                    want.copy_from_slice(&l[idx as usize * 32..idx as usize * 32 + 32]);
+                }
+                if !lh.finalize().is_some_and(|got| ct_eq(&got, &want)) {
+                    self.state = StreamState::Poisoned(ErrorCode::StreamChunkHashMismatch);
+                    return Err(ErrorCode::StreamChunkHashMismatch);
+                }
             }
-            hasher.update(&buf[..n]);
-            pos += n as u64;
         }
-        if !ct_eq(&hasher.finalize(), &h.rvf_identity) {
+        if !ct_eq(&ident.finalize(), &h.rvf_identity) {
             // Explicit retroactive revocation of an unverified artifact.
             self.state = StreamState::Poisoned(ErrorCode::StreamIdentityMismatch);
             return Err(ErrorCode::StreamIdentityMismatch);
+        }
+        if let Some(store) = self.policy.pins {
+            if let Err(e) = self.recheck_pin(store) {
+                self.state = StreamState::Poisoned(e);
+                return Err(e);
+            }
         }
         self.identity_status = Some(IdentityStatus::Verified);
         self.state = StreamState::Complete;
