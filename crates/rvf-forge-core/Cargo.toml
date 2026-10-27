@@ -25,6 +25,9 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+# Cross-checks that the runtime verifies Forge-signed Level-0 pages
+# byte-for-byte as Forge signs them (ADR-354 item 5/6).
+rvf-runtime = { path = "../rvf/rvf-runtime" }
 
 [lints]
 workspace = true

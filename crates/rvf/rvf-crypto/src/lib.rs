@@ -13,6 +13,7 @@ pub mod hash;
 pub mod lineage;
 #[cfg(feature = "ed25519")]
 pub mod sign;
+pub mod stream;
 pub mod witness;
 
 pub use attestation::{
@@ -29,4 +30,10 @@ pub use lineage::{
 };
 #[cfg(feature = "ed25519")]
 pub use sign::{sign_segment, verify_segment};
+pub use stream::{
+    chunk_list_hash, chunk_list_hash_flat, descriptor_hash, leaf_hash, sha256 as stream_sha256,
+    signer_key_id, LeafHasher, Sha256 as StreamSha256,
+};
+#[cfg(feature = "ed25519")]
+pub use stream::{sign_descriptor, verify_descriptor};
 pub use witness::{create_witness_chain, verify_witness_chain, WitnessEntry};
