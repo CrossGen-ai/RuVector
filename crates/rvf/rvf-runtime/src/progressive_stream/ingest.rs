@@ -310,6 +310,9 @@ impl<'p> StreamIngest<'p> {
                 self.witness(StreamWitness::DescriptorVerified(descriptor_hash));
             }
             Event::TableVerified { .. } => {}
+            // Authentic repeats (retransmits, replays) are idempotent: the bytes were
+            // already applied once and must never be applied again.
+            Event::Duplicate { .. } | Event::DuplicateDescriptor => {}
             Event::Chunk {
                 chunk,
                 segment_verified,

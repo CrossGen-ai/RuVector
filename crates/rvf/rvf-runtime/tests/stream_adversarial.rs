@@ -103,10 +103,11 @@ fn duplicated_and_bit_flipped_frames_are_refused() {
 fn replayed_old_epoch_is_rejected_with_a_witness() {
     let f = fixture_with(2600, 16, 8, 11, 1);
     let keys = [f.public];
-    let pin = |id: &[u8; 16]| {
+    // Pins are bound to (signer_key_id, file_id) and always carry the accepted descriptor hash.
+    let pin = |_signer: &[u8; 8], id: &[u8; 16]| {
         (id == &f.file_id).then_some(EpochPin {
             epoch: 2,
-            descriptor_hash: None,
+            descriptor_hash: [0x5a; 32],
         })
     };
     let mut policy = StreamPolicy::new(&keys);
