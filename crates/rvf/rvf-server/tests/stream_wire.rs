@@ -130,8 +130,8 @@ fn end_to_end_over_a_throttled_link_equals_a_buffered_open() {
             authentic(ing, &f);
         });
         let total = t0.elapsed().as_secs_f64();
-        assert_eq!(end, RunEnd::Complete);
-        assert_eq!(c.ingest.state(), StreamState::Complete);
+        assert_eq!(end, RunEnd::CompleteUnverified);
+        assert_eq!(c.ingest.state(), StreamState::CompleteUnverified);
         let mut same = 0;
         for q in &qs {
             let a: Vec<u64> = c
@@ -169,7 +169,10 @@ fn tcp_message_pair_delivers_the_same_stream() {
         TcpTransport::new(r.tcp.to_string(), 1 << 20),
         ClientConfig::default(),
     );
-    assert_eq!(c.run(&mut |ing| authentic(ing, &f)), RunEnd::Complete);
+    assert_eq!(
+        c.run(&mut |ing| authentic(ing, &f)),
+        RunEnd::CompleteUnverified
+    );
     assert_eq!(c.stats.bytes_fetched, r.server.stream_len());
     let d = TcpTransport::new(r.tcp.to_string(), 1)
         .descriptor()
@@ -214,23 +217,26 @@ fn http_mirror_lies_never_publish_unverified_data() {
         );
         match lie {
             // Control: an honest mirror that drops once resumes to Complete.
-            Lie::None => assert_eq!(end, RunEnd::Complete),
+            Lie::None => assert_eq!(end, RunEnd::CompleteUnverified),
             // Harmless or self-correcting lies may still complete, but only
             // with fully verified content.
             Lie::LengthTooBig | Lie::LengthTooSmall => {
-                if end == RunEnd::Complete {
+                if end.all_verified() {
                     assert_eq!(c.ingest.vectors().len(), f.ds.len());
                 }
             }
             // Resuming against a mirror that ignores / misreports Range must
             // be refused by the transport, so the stream cannot complete.
             Lie::RangeStartsAtZero | Lie::IgnoresRange | Lie::WrongTotal => {
-                assert_ne!(end, RunEnd::Complete, "{lie:?}");
+                assert!(!end.all_verified(), "{lie:?}");
                 assert!(c.stats.drops >= 1);
             }
         }
-        if end != RunEnd::Complete {
-            assert_ne!(c.ingest.state(), StreamState::Complete);
+        if !end.all_verified() {
+            assert!(!matches!(
+                c.ingest.state(),
+                StreamState::Complete | StreamState::CompleteUnverified
+            ));
         }
     }
     // Bit flips behind correct headers: refused by the verifier.
@@ -247,6 +253,6 @@ fn http_mirror_lies_never_publish_unverified_data() {
         },
     );
     let end = c.run(&mut |ing| authentic(ing, &f));
-    assert_ne!(end, RunEnd::Complete);
+    assert!(!end.all_verified());
     assert!(c.stats.refusals >= 1);
 }

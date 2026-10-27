@@ -75,7 +75,7 @@ fn queries_before_complete_return_only_verified_unsealed_data() {
         );
         assert_authentic(ing, &f.ds);
     });
-    assert_eq!(end, RunEnd::Complete);
+    assert_eq!(end, RunEnd::CompleteUnverified);
     assert!(
         before_a_empty,
         "nothing is searchable before Layer A is verified"
@@ -83,7 +83,7 @@ fn queries_before_complete_return_only_verified_unsealed_data() {
     assert_eq!(seen_layers, (true, true, true));
     assert!(queries > 10);
     let st = c.ingest.state();
-    assert_eq!(st, StreamState::Complete);
+    assert_eq!(st, StreamState::CompleteUnverified);
     // Stage order is not file order, so identity needs the persisted body.
     assert_eq!(
         c.ingest.verifier().identity_status(),
@@ -114,7 +114,7 @@ fn completed_stream_answers_like_a_buffered_open_of_the_same_file() {
         MemTransport::new(stream_bytes(&f)),
         ClientConfig::default(),
     );
-    assert_eq!(c.run(&mut |_| {}), RunEnd::Complete);
+    assert_eq!(c.run(&mut |_| {}), RunEnd::CompleteUnverified);
     let store = RvfStore::open_readonly(&f.path).unwrap();
     assert!(
         store.index_ready(),
@@ -169,7 +169,7 @@ fn suspend_and_resume_at_chunk_granularity_costs_no_resend() {
             frame_retries: 5,
         },
     );
-    assert_eq!(c.run(&mut |_| {}), RunEnd::Complete);
+    assert_eq!(c.run(&mut |_| {}), RunEnd::CompleteUnverified);
     assert!(c.stats.drops >= 6, "{:?}", c.stats);
     assert_eq!(c.stats.bytes_fetched, total, "resume re-sends nothing");
     assert_authentic(&c.ingest, &f.ds);

@@ -31,8 +31,11 @@ fn run_mirror<'p>(
 }
 
 fn not_complete(end: RunEnd, c: &StreamClient<'_, MemTransport>) {
-    assert_ne!(end, RunEnd::Complete);
-    assert_ne!(c.ingest.state(), StreamState::Complete);
+    assert!(!end.all_verified());
+    assert!(!matches!(
+        c.ingest.state(),
+        StreamState::Complete | StreamState::CompleteUnverified
+    ));
 }
 
 #[test]
@@ -78,11 +81,6 @@ fn duplicated_and_bit_flipped_frames_are_refused() {
     let keys = [f.public];
     let fr = frames(&f);
     let i = fr.iter().position(|x| x[0] == 0x01 && x[9] == 2).unwrap();
-    let mut dup = fr.clone();
-    dup.insert(i + 1, fr[i].clone());
-    let (end, c) = run_mirror(&f, dup.concat(), StreamPolicy::new(&keys));
-    not_complete(end, &c);
-
     for flip in [17usize, 100, 2000] {
         let mut bad = fr.clone();
         bad[i][flip] ^= 0x04;
@@ -232,10 +230,66 @@ fn transient_corruption_is_retried_to_completion() {
             frame_retries: 5,
         },
     );
-    assert_eq!(
-        c.run(&mut |ing| assert_authentic(ing, &f.ds)),
-        RunEnd::Complete
-    );
+    let end = c.run(&mut |ing| assert_authentic(ing, &f.ds));
+    // Stage order is not file order: all chunks verified, identity unconfirmed.
+    assert_eq!(end, RunEnd::CompleteUnverified);
     assert!(c.stats.refusals >= 1, "{:?}", c.stats);
     assert_eq!(c.ingest.vectors().len(), f.ds.len());
+}
+
+/// Authentic duplicates (chunk and descriptor frames) are idempotent: nothing
+/// is applied twice, the witness trail is unchanged, the stream still
+/// completes. A flood of them is capped and poisons.
+#[test]
+fn authentic_duplicates_never_double_apply_and_floods_poison() {
+    let f = fixture();
+    let keys = [f.public];
+    let fr = frames(&f);
+    let (base_end, base) = run_mirror(&f, fr.concat(), StreamPolicy::new(&keys));
+    assert_eq!(base_end, RunEnd::CompleteUnverified);
+    let base_w = base.ingest.witnesses().to_vec();
+    let published = |w: &[StreamWitness], l: u8| {
+        w.iter()
+            .filter(|x| **x == StreamWitness::LayerPublished(l))
+            .count()
+    };
+
+    let mut dup = fr.clone();
+    let chunk_frames: Vec<usize> = (1..fr.len()).filter(|&i| fr[i][0] == 0x01).collect();
+    // Duplicate the first chunk of each stage, an index chunk, and the descriptor.
+    for &i in chunk_frames
+        .iter()
+        .rev()
+        .step_by(chunk_frames.len() / 6 + 1)
+    {
+        dup.insert(i + 1, fr[i].clone());
+    }
+    dup.insert(1, fr[0].clone());
+    let (end, c) = run_mirror(&f, dup.concat(), StreamPolicy::new(&keys));
+    assert_eq!(end, RunEnd::CompleteUnverified);
+    assert_eq!(c.ingest.witnesses(), &base_w[..], "witness trail unchanged");
+    for l in [b'A', b'B', b'C'] {
+        assert_eq!(
+            published(c.ingest.witnesses(), l),
+            1,
+            "layer {} once",
+            l as char
+        );
+    }
+    assert_eq!(c.ingest.vectors().len(), f.ds.len());
+
+    // Flood: the same authentic chunk over and over exceeds the cap.
+    let i = chunk_frames[0];
+    let mut flood = fr.clone();
+    for _ in 0..50 {
+        flood.insert(i + 1, fr[i].clone());
+    }
+    let mut policy = StreamPolicy::new(&keys);
+    policy.max_duplicate_frames = Some(10);
+    let (end, c) = run_mirror(&f, flood.concat(), policy);
+    assert!(
+        matches!(end, RunEnd::Poisoned(ErrorCode::StreamDuplicateFlood)),
+        "{end:?}"
+    );
+    assert!(c.ingest.vectors().is_empty() && !c.ingest.layers().layer_a);
 }

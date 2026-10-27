@@ -39,7 +39,7 @@ pub fn b6(f: &Fix) {
         t.cut_after = Some(cut as usize);
         let mut c = StreamClient::new(StreamPolicy::new(&keys), t, ClientConfig::default());
         let t0 = Instant::now();
-        assert_eq!(c.run(&mut |_| {}), RunEnd::Complete);
+        assert_eq!(c.run(&mut |_| {}), RunEnd::CompleteUnverified);
         let a_resent = c.stats.bytes_fetched - total;
         let a_s = t0.elapsed().as_secs_f64();
         // (b) process killed: replay the frame log (truncated at `cut`) through a fresh verifier.
@@ -54,7 +54,7 @@ pub fn b6(f: &Fix) {
             MemTransport::new(stream.clone()),
             ClientConfig::default(),
         );
-        assert_eq!(c2.run(&mut |_| {}), RunEnd::Complete);
+        assert_eq!(c2.run(&mut |_| {}), RunEnd::CompleteUnverified);
         rows.push((
             cut,
             a_resent,

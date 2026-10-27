@@ -69,12 +69,23 @@ pub struct ClientStats {
 /// Why `run` returned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunEnd {
-    /// Every segment verified.
+    /// Every segment verified and the body identity confirmed.
     Complete,
+    /// Every segment verified, but chunks arrived out of file order (stage
+    /// order), so `rvf_identity` is unconfirmed until
+    /// `StreamIngest::finish_identity` succeeds. Answers stay unsealed.
+    CompleteUnverified,
     /// Terminal failure; nothing is published.
     Poisoned(ErrorCode),
     /// Out of retries; resumable by calling `run` again.
     Suspended,
+}
+
+impl RunEnd {
+    /// True for `Complete` and `CompleteUnverified` (all chunks verified).
+    pub fn all_verified(self) -> bool {
+        matches!(self, RunEnd::Complete | RunEnd::CompleteUnverified)
+    }
 }
 
 /// Fetch-verify-publish loop.
@@ -128,6 +139,7 @@ impl<'p, T: Transport> StreamClient<'p, T> {
         loop {
             match self.ingest.state() {
                 StreamState::Complete => return RunEnd::Complete,
+                StreamState::CompleteUnverified => return RunEnd::CompleteUnverified,
                 StreamState::Poisoned(e) | StreamState::Rejected(e) => return RunEnd::Poisoned(e),
                 StreamState::Suspended => {
                     self.ingest.resume();
@@ -179,7 +191,10 @@ impl<'p, T: Transport> StreamClient<'p, T> {
             }
             if matches!(
                 self.ingest.state(),
-                StreamState::Poisoned(_) | StreamState::Rejected(_) | StreamState::Complete
+                StreamState::Poisoned(_)
+                    | StreamState::Rejected(_)
+                    | StreamState::Complete
+                    | StreamState::CompleteUnverified
             ) {
                 continue;
             }

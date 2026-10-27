@@ -72,7 +72,7 @@ pub fn b1(f: &Fix, n: usize, dim: usize) {
                 }
             }
         });
-        assert_eq!(end, RunEnd::Complete);
+        assert_eq!(end, RunEnd::CompleteUnverified);
         // plain download of the same frame stream, no verification
         let t1 = Instant::now();
         let mut dl = Throttled {
