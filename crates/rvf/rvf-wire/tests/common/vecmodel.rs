@@ -203,6 +203,14 @@ pub fn run(p: &Pol, frames: &[Vec<u8>]) -> Out {
                 ("seg_id", n(seg_id)),
                 ("chunk_index", n(chunk_index)),
             ]),
+            Ok(Event::Unverified {
+                seg_id,
+                chunk_index,
+            }) => J::Obj(vec![
+                ("event", s("Unverified")),
+                ("seg_id", n(seg_id)),
+                ("chunk_index", n(chunk_index)),
+            ]),
             Ok(Event::DuplicateDescriptor) => J::Obj(vec![("event", s("DuplicateDescriptor"))]),
             Ok(Event::TableVerified { seg_id }) => {
                 J::Obj(vec![("event", s("TableVerified")), ("seg_id", n(seg_id))])

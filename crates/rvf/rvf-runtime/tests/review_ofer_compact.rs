@@ -15,7 +15,7 @@ use signed::*;
 fn embed_and_close(path: &std::path::Path, wasm: &[u8]) {
     let mut s = RvfStore::open_signed(
         path,
-        opts(&[public(&SECRET)]),
+        opts_prefix(&[public(&SECRET)]),
         SecurityPolicy::Strict,
         &SECRET,
     )
@@ -47,7 +47,7 @@ fn f01_compact_refuses_a_tampered_listed_segment() {
     std::fs::write(&p, &bytes).unwrap();
 
     // Strict open succeeds (wasm is lazy), but reading it is refused.
-    let s = RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict)
+    let s = RvfStore::open_with_policy(&p, opts_prefix(&[public(&SECRET)]), SecurityPolicy::Strict)
         .expect("strict open does not touch the wasm segment");
     assert!(
         s.extract_wasm().is_err(),
@@ -60,7 +60,7 @@ fn f01_compact_refuses_a_tampered_listed_segment() {
     // changes; it is not laundered into the signature.
     let mut s = RvfStore::open_signed(
         &p,
-        opts(&[public(&SECRET)]),
+        opts_prefix(&[public(&SECRET)]),
         SecurityPolicy::Strict,
         &SECRET,
     )
@@ -80,8 +80,8 @@ fn f01_compact_refuses_a_tampered_listed_segment() {
     s.close().unwrap();
     assert_eq!(std::fs::read(&p).unwrap(), before, "file untouched");
 
-    let s =
-        RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict).unwrap();
+    let s = RvfStore::open_with_policy(&p, opts_prefix(&[public(&SECRET)]), SecurityPolicy::Strict)
+        .unwrap();
     assert!(s.extract_wasm().is_err(), "tampered wasm is still refused");
 }
 
@@ -142,14 +142,14 @@ fn f02_compact_drops_unindexed_injected_segment() {
     std::fs::write(&p, &evil).unwrap();
 
     // Strict open still succeeds: newest manifest unchanged, page valid.
-    let s = RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict)
+    let s = RvfStore::open_with_policy(&p, opts_prefix(&[public(&SECRET)]), SecurityPolicy::Strict)
         .expect("strict open succeeds");
     assert!(s.extract_wasm().unwrap().is_none());
     drop(s);
 
     let mut s = RvfStore::open_signed(
         &p,
-        opts(&[public(&SECRET)]),
+        opts_prefix(&[public(&SECRET)]),
         SecurityPolicy::Strict,
         &SECRET,
     )
@@ -159,8 +159,12 @@ fn f02_compact_drops_unindexed_injected_segment() {
 
     // F-02 fixed: only directory-listed segments are carried, so the
     // injected segment is dropped, not adopted into the signature.
-    let s =
-        RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Paranoid).unwrap();
+    let s = RvfStore::open_with_policy(
+        &p,
+        opts_prefix(&[public(&SECRET)]),
+        SecurityPolicy::Paranoid,
+    )
+    .unwrap();
     assert!(
         s.extract_wasm().unwrap().is_none(),
         "injected segment was not adopted"

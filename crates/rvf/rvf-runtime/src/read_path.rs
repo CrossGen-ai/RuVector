@@ -63,6 +63,10 @@ pub(crate) struct LocatedManifest {
     /// Under a signed page: the newest parseable manifest beyond the
     /// page-named one `(offset, epoch)`, which was NOT used.
     pub newer_ignored: Option<(u64, u32)>,
+    /// Under a signed page: offset of the first byte after the signed manifest
+    /// when anything at all (even unparseable bytes) follows it before the
+    /// page. A correctly written signed file ends manifest, then page.
+    pub unsigned_tail: Option<u64>,
 }
 
 /// Work done by one manifest scan. Exposed for the DoS regression test, which
@@ -222,6 +226,13 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
             if let (Some(n), _, _) = scan_blocks(reader, file_size, end, mode, newer_hint, stats)? {
                 m.newer_ignored = Some((n.offset, n.manifest.epoch));
             }
+            let signed_end = o + rvf_wire::writer::calculate_padded_size(
+                SEGMENT_HEADER_SIZE,
+                m.header.payload_length as usize,
+            ) as u64;
+            if end > signed_end {
+                m.unsigned_tail = Some(signed_end);
+            }
             return Ok(Some(m));
         }
     }
@@ -274,6 +285,7 @@ fn manifest_at<R: Read + Seek>(
             payload,
             mode: ScanMode::Aligned,
             newer_ignored: None,
+            unsigned_tail: None,
         }),
     )
 }
@@ -366,6 +378,7 @@ fn scan_blocks<R: Read + Seek>(
                         payload,
                         mode,
                         newer_ignored: None,
+                        unsigned_tail: None,
                     }),
                     saw,
                     false,

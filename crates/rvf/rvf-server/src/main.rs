@@ -57,7 +57,7 @@ struct Cli {
     stream_min_rate: u64,
 
     /// Streams one client address may hold at once
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = 2)]
     stream_max_per_client: usize,
 }
 

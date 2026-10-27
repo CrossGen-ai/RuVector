@@ -396,7 +396,7 @@ impl<'p> StreamIngest<'p> {
             Event::TableVerified { .. } => {}
             // Authentic repeats (retransmits, replays) are idempotent: the bytes were
             // already applied once and must never be applied again.
-            Event::Duplicate { .. } | Event::DuplicateDescriptor => {}
+            Event::Duplicate { .. } | Event::DuplicateDescriptor | Event::Unverified { .. } => {}
             Event::Chunk {
                 chunk,
                 segment_verified,

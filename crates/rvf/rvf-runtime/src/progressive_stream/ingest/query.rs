@@ -86,6 +86,8 @@ fn default_work_budget(visible: usize) -> u64 {
 
 /// Rows timed when calibrating the scan cost.
 const CALIBRATION_ROWS: usize = 2048;
+/// Smallest scan the Auto policy always allows, however slow the calibration.
+const MIN_SCAN_ROWS: usize = 1024;
 
 impl<'p> StreamIngest<'p> {
     /// Latency bound for the exact-scan path (default 25 ms).
@@ -144,12 +146,22 @@ impl<'p> StreamIngest<'p> {
             };
         let mut truncated = false;
         let mut work_steps = 0u64;
+        let mut scanned = visible;
         let (mut hits, path) = if scan {
+            // Auto never scans more rows than the latency bound allows (F4-03):
+            // without Layer A the scan covers the oldest rows only and says so.
+            if mode == QueryMode::Auto {
+                let cap = self.scan_threshold(q).max(MIN_SCAN_ROWS);
+                if visible > cap {
+                    scanned = cap;
+                    truncated = true;
+                }
+            }
             let t = Instant::now();
             let h = self
                 .vectors
-                .exact_topk(q, k, &|id| self.deleted.contains(&id));
-            let per = t.elapsed().as_nanos() as f64 / visible as f64;
+                .exact_topk_rows(q, k, scanned, &|id| self.deleted.contains(&id));
+            let per = t.elapsed().as_nanos() as f64 / scanned.max(1) as f64;
             let old = self.scan_ns_per_vec.get();
             self.scan_ns_per_vec.set(if old <= 0.0 {
                 per
@@ -158,15 +170,24 @@ impl<'p> StreamIngest<'p> {
             });
             (h, QueryPath::ArrivedScan)
         } else if can_layers {
+            let limit = self
+                .work_budget
+                .unwrap_or_else(|| default_work_budget(visible));
+            let ncent = self.index.layer_a.as_ref().map_or(0, |a| a.centroids.len()) as u64;
+            let per_centroid = (self.vectors.dimension_hint() as u64).div_ceil(8).max(1);
             let b = BudgetedStore {
                 inner: &self.vectors,
                 steps: std::cell::Cell::new(0),
-                limit: self
-                    .work_budget
-                    .unwrap_or_else(|| default_work_budget(visible)),
+                limit,
                 exhausted: std::cell::Cell::new(false),
             };
-            let h = self.index.search(q, k + self.deleted.len().min(k), ef, &b);
+            // F4-02: the centroid scan and sort are charged to the budget; a
+            // Layer A whose centroids alone exceed it is not searched.
+            let h = if b.spend(ncent.saturating_mul(per_centroid)) {
+                self.index.search(q, k + self.deleted.len().min(k), ef, &b)
+            } else {
+                Vec::new()
+            };
             truncated = b.exhausted.get();
             work_steps = b.steps.get();
             (h, QueryPath::Layers)
@@ -223,7 +244,7 @@ impl<'p> StreamIngest<'p> {
             0.0
         };
         let coverage_vectors = if expected > 0.0 {
-            (visible as f64 / expected).min(1.0)
+            (scanned as f64 / expected).min(1.0)
         } else {
             f64::from(u8::from(sealed))
         };
@@ -248,7 +269,7 @@ impl<'p> StreamIngest<'p> {
                 evidence: SearchEvidenceSummary {
                     layers_used: layers,
                     safety_net_candidate_count: if path == QueryPath::ArrivedScan {
-                        visible as u32
+                        scanned as u32
                     } else {
                         0
                     },
@@ -257,7 +278,7 @@ impl<'p> StreamIngest<'p> {
                 budgets: BudgetReport {
                     total_us: t0.elapsed().as_micros() as u64,
                     linear_scan_count: if path == QueryPath::ArrivedScan {
-                        visible as u64
+                        scanned as u64
                     } else {
                         0
                     },

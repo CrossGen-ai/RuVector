@@ -222,6 +222,7 @@ fn runtime_signed_fixture_regenerates_and_opens_under_strict() {
 
     let o = RvfOptions {
         trusted_signers: vec![public_key()],
+        freshness: Some(rvf_runtime::Freshness::Unchecked),
         ..Default::default()
     };
     let s = RvfStore::open_with_policy(

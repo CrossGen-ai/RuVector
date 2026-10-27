@@ -86,3 +86,91 @@ fn f3_05_per_client_cap() {
         "third stream from the same address is refused although the pool has room"
     );
 }
+
+/// F4-06 (fixed): addresses in one /24 share a prefix cap, so two source
+/// addresses cannot pin the pool; a client from another prefix still gets in.
+#[test]
+fn f4_06_two_addresses_cannot_pin_the_pool() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpSocket;
+    let f = fixture(60000, 32, 16, 5);
+    let mut cfg = rvf_server::stream::StreamServerConfig::new(f.rvf.clone(), f.keyfile.clone());
+    cfg.chunk_log2 = 16;
+    let server = rvf_server::stream::StreamServer::load(cfg).unwrap();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let l = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let app = rvf_server::stream::router(server.clone());
+        tokio::spawn(async move {
+            axum::serve(
+                l,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        let target: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        let get = |src: &'static str, range: &'static str| async move {
+            let s = TcpSocket::new_v4().unwrap();
+            s.bind(format!("{src}:0").parse().unwrap()).unwrap();
+            let mut c = s.connect(target).await.unwrap();
+            let req = format!(
+                "GET /v1/stream/body HTTP/1.1\r\nHost: x\r\n{range}Connection: close\r\n\r\n"
+            );
+            c.write_all(req.as_bytes()).await.unwrap();
+            let mut b = vec![0u8; 64];
+            let n = c.read(&mut b).await.unwrap();
+            (String::from_utf8_lossy(&b[..n.min(20)]).to_string(), c)
+        };
+        let mut held = Vec::new();
+        let mut statuses = Vec::new();
+        for src in ["127.0.0.2", "127.0.0.3"] {
+            for _ in 0..4 {
+                let (st, c) = get(src, "").await;
+                statuses.push(st);
+                held.push(c);
+            }
+        }
+        let ok = statuses.iter().filter(|s| s.contains(" 200")).count();
+        assert!(ok <= 4, "one /24 took {ok} slots: {statuses:?}");
+        let (other, _c) = get("127.1.0.9", "Range: bytes=0-9\r\n").await;
+        assert!(
+            other.contains("206"),
+            "a new prefix is locked out: {other:?}"
+        );
+    });
+}
+
+/// F4-06 (fixed): a router mounted without connect info fails closed.
+#[test]
+fn f4_06_missing_connect_info_fails_closed() {
+    let f = fixture(60000, 32, 16, 5);
+    let server = {
+        let mut cfg = rvf_server::stream::StreamServerConfig::new(f.rvf.clone(), f.keyfile.clone());
+        cfg.chunk_log2 = 16;
+        rvf_server::stream::StreamServer::load(cfg).unwrap()
+    };
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let l = rt
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = l.local_addr().unwrap();
+    let app = rvf_server::stream::router(server);
+    rt.spawn(async move {
+        axum::serve(l, app).await.unwrap();
+    });
+    assert_eq!(
+        raw_get(addr, "/v1/stream/body", Some("bytes=0-9")).0,
+        503,
+        "no peer address must mean no stream, not no limit"
+    );
+}

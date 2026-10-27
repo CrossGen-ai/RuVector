@@ -288,7 +288,7 @@ fn planted_newer_manifest_beyond_a_signed_page_is_refused_unless_the_prefix_is_o
     // state outright (the file's own manifest epoch is the monotone counter).
     let mut o = opts(&[public(&SECRET)]);
     o.serve_signed_prefix = true;
-    o.min_epoch = u32::MAX;
+    o.freshness = Some(rvf_runtime::Freshness::MinEpoch(u32::MAX));
     assert!(matches!(
         RvfStore::open_with_policy(&p, o, SecurityPolicy::Strict),
         Err(rvf_types::RvfError::Code(
@@ -335,9 +335,9 @@ fn freshness_pin_accepts_the_pinned_epoch_and_refuses_older_state() {
         .unwrap()
         .epoch();
     let mut o = opts(&[public(&SECRET)]);
-    o.min_epoch = epoch;
+    o.freshness = Some(rvf_runtime::Freshness::MinEpoch(epoch));
     assert!(RvfStore::open_with_policy(&p, o.clone(), SecurityPolicy::Strict).is_ok());
-    o.min_epoch = epoch + 1;
+    o.freshness = Some(rvf_runtime::Freshness::MinEpoch(epoch + 1));
     for pol in [SecurityPolicy::Strict, SecurityPolicy::Paranoid] {
         assert!(matches!(
             RvfStore::open_with_policy(&p, o.clone(), pol),

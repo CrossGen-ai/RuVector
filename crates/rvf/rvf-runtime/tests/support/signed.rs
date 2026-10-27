@@ -21,6 +21,7 @@ pub fn opts(trusted: &[[u8; 32]]) -> RvfOptions {
     RvfOptions {
         dimension: 4,
         trusted_signers: trusted.to_vec(),
+        freshness: Some(rvf_runtime::Freshness::Unchecked),
         ..Default::default()
     }
 }
@@ -77,5 +78,14 @@ pub fn open_err(path: &Path, trusted: &[[u8; 32]], policy: SecurityPolicy) -> Rv
     match RvfStore::open_with_policy(path, opts(trusted), policy) {
         Err(e) => e,
         Ok(_) => panic!("{policy:?} opened a file it must refuse"),
+    }
+}
+
+/// [`opts`] that serve the signed prefix when unsigned manifest-shaped bytes
+/// follow the signed manifest (F4-04 opt-in), for tests that inject such bytes.
+pub fn opts_prefix(trusted: &[[u8; 32]]) -> RvfOptions {
+    RvfOptions {
+        serve_signed_prefix: true,
+        ..opts(trusted)
     }
 }

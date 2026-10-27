@@ -847,6 +847,7 @@ dependencies = [
  "axum",
  "ed25519-dalek",
  "libfuzzer-sys",
+ "rvf-index",
  "rvf-runtime",
  "rvf-server",
  "rvf-types",

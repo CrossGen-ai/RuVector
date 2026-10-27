@@ -165,6 +165,8 @@ pub enum ErrorCode {
     StreamBadState = 0x0819,
     /// Too many idempotent duplicate frames (retransmit flood).
     StreamDuplicateFlood = 0x081A,
+    /// A signature-checking open was requested without an explicit freshness choice.
+    FreshnessRequired = 0x081B,
 
     // ---- Category 0x09: Quality Errors (ADR-033) ----
     /// Query result quality is below threshold and AcceptDegraded not set.
@@ -309,6 +311,7 @@ impl TryFrom<u16> for ErrorCode {
             0x0817 => Ok(Self::StreamPoisoned),
             0x0819 => Ok(Self::StreamBadState),
             0x081A => Ok(Self::StreamDuplicateFlood),
+            0x081B => Ok(Self::FreshnessRequired),
 
             0x0900 => Ok(Self::QualityBelowThreshold),
             0x0901 => Ok(Self::BudgetTokensExhausted),
@@ -449,6 +452,7 @@ mod tests {
             (0x0817, ErrorCode::StreamPoisoned),
             (0x0819, ErrorCode::StreamBadState),
             (0x081A, ErrorCode::StreamDuplicateFlood),
+            (0x081B, ErrorCode::FreshnessRequired),
             (0x0900, ErrorCode::QualityBelowThreshold),
             (0x0901, ErrorCode::BudgetTokensExhausted),
             (0x0902, ErrorCode::QueryBlacklisted),

@@ -54,7 +54,7 @@ impl RvfStore {
             return Self::open(path);
         }
         let mut state = SecurityState::with(policy, options.trusted_signers.clone(), None);
-        state.min_epoch = options.min_epoch;
+        state.freshness = options.freshness;
         state.serve_signed_prefix = options.serve_signed_prefix;
         Self::open_readonly_inner(path, &mut HashSet::new(), state)
     }
@@ -79,7 +79,7 @@ impl RvfStore {
         }
         let mut state =
             SecurityState::with(policy, options.trusted_signers.clone(), Some(*signing_key));
-        state.min_epoch = options.min_epoch;
+        state.freshness = options.freshness;
         state.serve_signed_prefix = options.serve_signed_prefix;
         Self::open_inner(path, state)
     }
@@ -105,6 +105,12 @@ impl RvfStore {
     /// `RvfOptions::serve_signed_prefix`: the newest parseable manifest found
     /// beyond the signed page, `(offset, epoch)`. It was NOT used; the store
     /// serves the signed state. `None` when there is no such manifest.
+    /// True if unsigned bytes (of any shape) follow the signed manifest and
+    /// were served past under `serve_signed_prefix`.
+    pub fn unsigned_tail_present(&self) -> bool {
+        self.security.unsigned_tail.is_some()
+    }
+
     pub fn newer_manifest_ignored(&self) -> Option<(u64, u32)> {
         self.security.newer_ignored
     }
@@ -245,10 +251,15 @@ impl RvfStore {
                 .store(true, Ordering::Release);
             if policy.requires_signature() {
                 // A signed page proves authenticity, not freshness (F3-02).
-                if located.manifest.epoch < self.security.min_epoch {
-                    return Err(err(ErrorCode::StreamStaleEpoch));
+                match self.security.freshness {
+                    None => return Err(err(ErrorCode::FreshnessRequired)),
+                    Some(crate::options::Freshness::MinEpoch(m)) if located.manifest.epoch < m => {
+                        return Err(err(ErrorCode::StreamStaleEpoch));
+                    }
+                    _ => {}
                 }
-                if let Some((off, epoch)) = located.newer_ignored {
+                if let Some(off) = located.unsigned_tail {
+                    let epoch = located.newer_ignored.map_or(0, |n| n.1);
                     if !self.security.serve_signed_prefix {
                         // An unsigned tail: interrupted commit, planted manifest or
                         // a page swapped back over newer data. Refuse unless the
@@ -264,7 +275,8 @@ impl RvfStore {
                         "rvf: serving the signed state (epoch {}) although a newer manifest (epoch {epoch}) follows the signed page at 0x{off:X}",
                         located.manifest.epoch
                     );
-                    self.security.newer_ignored = Some((off, epoch));
+                    self.security.unsigned_tail = Some(off);
+                    self.security.newer_ignored = located.newer_ignored;
                 }
             }
         }

@@ -356,7 +356,9 @@ fn authentic_duplicates_are_idempotent_and_not_faults() {
     let mut dups = 0;
     for f in &dup {
         match v.push(f).unwrap() {
-            Event::Duplicate { .. } | Event::DuplicateDescriptor => dups += 1,
+            Event::Duplicate { .. } | Event::DuplicateDescriptor | Event::Unverified { .. } => {
+                dups += 1
+            }
             _ => {}
         }
     }

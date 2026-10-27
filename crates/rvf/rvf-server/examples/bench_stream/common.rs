@@ -125,6 +125,13 @@ pub fn start_server(
         .unwrap();
     let addr = l.local_addr().unwrap();
     let app = stream::router(srv.clone());
-    rt.spawn(async move { axum::serve(l, app).await.unwrap() });
+    rt.spawn(async move {
+        axum::serve(
+            l,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
     (addr, srv, rt)
 }

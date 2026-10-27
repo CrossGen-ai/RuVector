@@ -62,8 +62,20 @@ pub struct StreamServerConfig {
     pub min_rate_bytes_per_sec: u64,
     /// Window (and start-up allowance) for the minimum-rate rule.
     pub rate_grace: Duration,
-    /// Concurrent streams (HTTP) / connections (TCP) one client address may hold.
+    /// Per-client policy; see [`ClientCap`]. Default `PerAddress`.
+    pub client_cap: ClientCap,
+    /// Streams (HTTP) one client address may hold; TCP connections allow 4x.
     pub max_streams_per_client: usize,
+    /// Streams one network prefix (IPv4 /24, IPv6 /64) may hold. Clients behind
+    /// one NAT or proxy share a prefix and therefore share this cap.
+    pub max_streams_per_prefix: usize,
+    /// The last `reserve_slots` of the pool are only given to a prefix that holds
+    /// no stream yet, so established clients cannot take every slot.
+    pub reserve_slots: usize,
+    /// Most streams that may run below `8 x min_rate_bytes_per_sec` at once
+    /// (measured per rate window); a stream that would exceed it is cut. Keeps
+    /// at least the rest of the pool for fast clients.
+    pub max_slow_streams: usize,
 }
 
 impl StreamServerConfig {
@@ -82,52 +94,122 @@ impl StreamServerConfig {
             total_deadline: Duration::from_secs(600),
             min_rate_bytes_per_sec: 32 << 10,
             rate_grace: Duration::from_secs(10),
-            max_streams_per_client: 4,
+            client_cap: ClientCap::PerAddress,
+            max_streams_per_client: 2,
+            max_streams_per_prefix: 4,
+            reserve_slots: 2,
+            max_slow_streams: 4,
         }
     }
 }
 
-/// Per-client-address slot accounting.
+/// Per-client-address slot accounting, keyed by address and by network prefix
+/// (IPv4 /24, IPv6 /64; IPv4-mapped IPv6 is folded into IPv4), so rotating
+/// addresses inside one prefix does not multiply a client's share.
 #[derive(Default)]
-pub struct ClientTable(Mutex<HashMap<IpAddr, usize>>);
+pub struct ClientTable(Mutex<ClientCounts>);
+
+#[derive(Default)]
+struct ClientCounts {
+    addr: HashMap<IpAddr, usize>,
+    prefix: HashMap<[u8; 9], usize>,
+}
 
 /// One slot held by a client address; released on drop.
 pub struct ClientSlot {
     table: Arc<ClientTable>,
     ip: IpAddr,
+    prefix: [u8; 9],
+}
+
+fn canonical(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4),
+        v4 => v4,
+    }
+}
+
+fn prefix_key(ip: IpAddr) -> [u8; 9] {
+    let mut k = [0u8; 9];
+    match ip {
+        IpAddr::V4(a) => {
+            k[0] = 4;
+            k[1..4].copy_from_slice(&a.octets()[..3]);
+        }
+        IpAddr::V6(a) => {
+            k[0] = 6;
+            k[1..9].copy_from_slice(&a.octets()[..8]);
+        }
+    }
+    k
 }
 
 impl ClientTable {
-    fn acquire(self: &Arc<Self>, ip: IpAddr, cap: usize) -> Option<ClientSlot> {
+    /// Take a slot unless `ip` or its prefix is at its cap. Returns the slot and
+    /// how many slots the prefix held before.
+    fn acquire(
+        self: &Arc<Self>,
+        ip: IpAddr,
+        addr_cap: usize,
+        prefix_cap: usize,
+    ) -> Option<(ClientSlot, usize)> {
+        let ip = canonical(ip);
+        let prefix = prefix_key(ip);
         let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let n = m.entry(ip).or_insert(0);
-        if *n >= cap.max(1) {
+        let na = m.addr.get(&ip).copied().unwrap_or(0);
+        let np = m.prefix.get(&prefix).copied().unwrap_or(0);
+        if na >= addr_cap.max(1) || np >= prefix_cap.max(1) {
             return None;
         }
-        *n += 1;
-        Some(ClientSlot {
-            table: self.clone(),
-            ip,
-        })
+        *m.addr.entry(ip).or_insert(0) += 1;
+        *m.prefix.entry(prefix).or_insert(0) += 1;
+        Some((
+            ClientSlot {
+                table: self.clone(),
+                ip,
+                prefix,
+            },
+            np,
+        ))
     }
 }
 
 impl Drop for ClientSlot {
     fn drop(&mut self) {
         let mut m = self.table.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(n) = m.get_mut(&self.ip) {
+        if let Some(n) = m.addr.get_mut(&self.ip) {
             *n -= 1;
             if *n == 0 {
-                m.remove(&self.ip);
+                m.addr.remove(&self.ip);
+            }
+        }
+        if let Some(n) = m.prefix.get_mut(&self.prefix) {
+            *n -= 1;
+            if *n == 0 {
+                m.prefix.remove(&self.prefix);
             }
         }
     }
 }
 
-/// Everything one HTTP stream holds: pool permit plus per-client slot.
+/// Everything one HTTP stream holds: pool permit, per-client slot, and (while
+/// it is classed as slow) a slot in the slow-stream budget.
 pub struct StreamSlot {
     _permit: OwnedSemaphorePermit,
     _client: Option<ClientSlot>,
+}
+
+/// Per-client policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientCap {
+    /// Enforce the per-address, per-prefix and reserve rules. A request whose
+    /// peer address is unknown (the router was mounted without
+    /// `into_make_service_with_connect_info::<SocketAddr>()`) is REFUSED with
+    /// 503, so a missing connect-info layer cannot silently disable the limits.
+    PerAddress,
+    /// Explicit opt-out: no per-client accounting (single trusted client, or
+    /// accounting done by a fronting proxy).
+    Disabled,
 }
 
 /// Loaded stream server state.
@@ -138,6 +220,7 @@ pub struct StreamServer {
     tcp_permits: Arc<Semaphore>,
     http_clients: Arc<ClientTable>,
     tcp_clients: Arc<ClientTable>,
+    slow: Mutex<usize>,
     cfg: StreamServerConfig,
 }
 
@@ -183,6 +266,7 @@ impl StreamServer {
             tcp_permits: Arc::new(Semaphore::new(cfg.max_concurrent_streams.max(1))),
             http_clients: Arc::default(),
             tcp_clients: Arc::default(),
+            slow: Mutex::new(0),
             body: Arc::new(body),
             plan: Arc::new(plan),
             cfg,
@@ -220,18 +304,39 @@ impl StreamServer {
         self.tcp_permits.clone().try_acquire_owned().ok()
     }
 
-    /// Take one HTTP stream slot (held until dropped): a pool permit and, when
-    /// the peer address is known, a per-client slot.
-    pub fn try_permit(&self, peer: Option<IpAddr>) -> Option<StreamSlot> {
-        let client = match peer {
-            Some(ip) => Some(
-                self.http_clients
-                    .acquire(ip, self.cfg.max_streams_per_client)?,
-            ),
-            None => None,
+    /// Take one HTTP stream slot (held until dropped): a pool permit and, under
+    /// `ClientCap::PerAddress`, a per-client slot. With `PerAddress` an unknown
+    /// peer is refused (fail closed).
+    pub fn try_permit(&self, peer: Option<IpAddr>) -> Result<StreamSlot, StreamRefusal> {
+        let pool = self.cfg.max_concurrent_streams.max(1);
+        let client = match (self.cfg.client_cap, peer) {
+            (ClientCap::Disabled, _) => None,
+            (ClientCap::PerAddress, None) => return Err(StreamRefusal::PeerUnknown),
+            (ClientCap::PerAddress, Some(ip)) => {
+                let (slot, held_by_prefix) = self
+                    .http_clients
+                    .acquire(
+                        ip,
+                        self.cfg.max_streams_per_client,
+                        self.cfg.max_streams_per_prefix,
+                    )
+                    .ok_or(StreamRefusal::Busy)?;
+                // The reserve: when only `reserve_slots` are free, a prefix that
+                // already holds a stream does not get another.
+                let free = self.permits.available_permits();
+                if free <= self.cfg.reserve_slots.min(pool.saturating_sub(1)) && held_by_prefix > 0
+                {
+                    return Err(StreamRefusal::Busy);
+                }
+                Some(slot)
+            }
         };
-        let permit = self.permits.clone().try_acquire_owned().ok()?;
-        Some(StreamSlot {
+        let permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| StreamRefusal::Busy)?;
+        Ok(StreamSlot {
             _permit: permit,
             _client: client,
         })
@@ -239,9 +344,46 @@ impl StreamServer {
 
     /// Per-client TCP connection slot (stream-enabled servers only).
     pub fn try_tcp_client(&self, peer: IpAddr) -> Option<ClientSlot> {
+        if self.cfg.client_cap == ClientCap::Disabled {
+            return None;
+        }
         self.tcp_clients
-            .acquire(peer, self.cfg.max_streams_per_client.saturating_mul(4))
+            .acquire(
+                peer,
+                self.cfg.max_streams_per_client.saturating_mul(4),
+                self.cfg.max_streams_per_prefix.saturating_mul(4),
+            )
+            .map(|(s, _)| s)
     }
+
+    /// Reserve one place in the slow-stream budget; `None` when it is full.
+    fn try_slow(self: &Arc<Self>) -> Option<SlowToken> {
+        let mut n = self.slow.lock().unwrap_or_else(|e| e.into_inner());
+        if *n >= self.cfg.max_slow_streams {
+            return None;
+        }
+        *n += 1;
+        Some(SlowToken(self.clone()))
+    }
+}
+
+/// Place in the slow-stream budget, returned on drop.
+struct SlowToken(Arc<StreamServer>);
+
+impl Drop for SlowToken {
+    fn drop(&mut self) {
+        let mut n = self.0.slow.lock().unwrap_or_else(|e| e.into_inner());
+        *n = n.saturating_sub(1);
+    }
+}
+
+/// Why a stream slot was not granted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamRefusal {
+    /// Pool, per-address, per-prefix or reserve limit.
+    Busy,
+    /// `ClientCap::PerAddress` without a peer address (connect-info missing).
+    PeerUnknown,
 }
 
 /// Router for the stream endpoints.
@@ -316,8 +458,18 @@ async fn body(
     if partial {
         end = end.min(start + s.cfg.max_range_bytes);
     }
-    let Some(permit) = s.try_permit(peer.map(|c| c.0.ip())) else {
-        return (StatusCode::TOO_MANY_REQUESTS, "too many concurrent streams").into_response();
+    let permit = match s.try_permit(peer.map(|c| c.0.ip())) {
+        Ok(p) => p,
+        Err(StreamRefusal::Busy) => {
+            return (StatusCode::TOO_MANY_REQUESTS, "too many concurrent streams").into_response();
+        }
+        Err(StreamRefusal::PeerUnknown) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "peer address unavailable: serve with connect info or set ClientCap::Disabled",
+            )
+                .into_response();
+        }
     };
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(4);
     let srv = s.clone();
@@ -330,6 +482,7 @@ async fn body(
         let (idle, deadline) = (srv.cfg.idle_timeout, srv.cfg.total_deadline);
         let (win, floor) = (srv.cfg.rate_grace, srv.cfg.min_rate_bytes_per_sec);
         let (mut win_start, mut win_bytes) = (started, 0u64);
+        let mut slow: Option<SlowToken> = None;
         let mut at = start;
         while at < end {
             if started.elapsed() > deadline {
@@ -353,6 +506,32 @@ async fn body(
             if el >= win {
                 if (win_bytes as u128) * 1_000 < (floor as u128) * el.as_millis() {
                     return;
+                }
+                // Below 8x the floor the stream is "slow" and draws on the slow budget;
+                // when that is full it is cut, leaving the rest of the pool to
+                // clients that read quickly.
+                if (win_bytes as u128) * 1_000 < (floor as u128) * 8 * el.as_millis() {
+                    if slow.is_none() {
+                        slow = srv.try_slow();
+                        if slow.is_none() {
+                            return;
+                        }
+                    }
+                } else {
+                    slow = None;
+                }
+                // Below 8x the floor the stream is "slow" and draws on the slow
+                // budget; when that is full it is cut, leaving the rest of the
+                // pool to clients that read quickly.
+                if (win_bytes as u128) * 1_000 < (floor as u128) * 8 * el.as_millis() {
+                    if slow.is_none() {
+                        slow = srv.try_slow();
+                        if slow.is_none() {
+                            return;
+                        }
+                    }
+                } else {
+                    slow = None;
                 }
                 win_start = Instant::now();
                 win_bytes = 0;

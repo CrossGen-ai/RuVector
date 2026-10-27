@@ -12,10 +12,16 @@ mod signed;
 use signed::*;
 
 fn strict(p: &std::path::Path) -> Result<RvfStore, rvf_types::RvfError> {
-    RvfStore::open_with_policy(p, opts(&[public(&SECRET)]), SecurityPolicy::Paranoid)
+    RvfStore::open_with_policy(p, opts_prefix(&[public(&SECRET)]), SecurityPolicy::Paranoid)
 }
 fn owner(p: &std::path::Path) -> RvfStore {
-    RvfStore::open_signed(p, opts(&[public(&SECRET)]), SecurityPolicy::Strict, &SECRET).unwrap()
+    RvfStore::open_signed(
+        p,
+        opts_prefix(&[public(&SECRET)]),
+        SecurityPolicy::Strict,
+        &SECRET,
+    )
+    .unwrap()
 }
 
 /// Legitimate signed store with every embeddable segment type, audit witnesses,
@@ -150,6 +156,7 @@ fn r2_injected_segment_with_witness_flow() {
     evil.extend_from_slice(page.unwrap());
     std::fs::write(&p, &evil).unwrap();
     let mut oo = opts(&[public(&SECRET)]);
+    oo.serve_signed_prefix = true;
     oo.witness.audit_queries = true;
     let mut s = RvfStore::open_signed(&p, oo, SecurityPolicy::Strict, &SECRET).unwrap();
     s.query_audited(&[1.0, 1.0, 2.0, 3.0], 2, &QueryOptions::default())

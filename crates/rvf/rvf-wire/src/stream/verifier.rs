@@ -85,6 +85,16 @@ pub enum Event<'a> {
         /// Chunk index.
         chunk_index: u32,
     },
+    /// A chunk for an already finished multi-chunk segment whose table has been
+    /// freed: its length matched but its bytes cannot be checked any more. It is
+    /// counted against the duplicate budget, never released and never to be
+    /// logged or treated as authentic.
+    Unverified {
+        /// Segment id.
+        seg_id: u64,
+        /// Chunk index.
+        chunk_index: u32,
+    },
     /// The descriptor frame was received again, byte-identical: ignored.
     DuplicateDescriptor,
     /// A chunk table matched its commitment.
@@ -543,9 +553,15 @@ impl<'p> StreamVerifier<'p> {
             if !ct_eq(&leaf_hash(&h.file_id, seg_id, idx, bytes), &w) {
                 return Err(self.fault(ErrorCode::StreamChunkHashMismatch));
             }
+        } else {
+            // A finished multi-chunk segment whose table was freed: the bytes
+            // cannot be checked, so they are counted and reported as such.
+            self.count_duplicate()?;
+            return Ok(Event::Unverified {
+                seg_id,
+                chunk_index: idx,
+            });
         }
-        // else: a finished multi-chunk segment whose table was freed: nothing
-        // is released by a duplicate, so it is only counted.
         self.count_duplicate()?;
         Ok(Event::Duplicate {
             seg_id,

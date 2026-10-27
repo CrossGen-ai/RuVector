@@ -97,10 +97,12 @@ pub(super) struct SecurityState {
     /// signed root page by writing (F-12). Default false.
     pub allow_unsigning: bool,
     /// Freshness pin and prefix opt-in from `RvfOptions` (F3-02).
-    pub min_epoch: u32,
+    pub freshness: Option<crate::options::Freshness>,
     pub serve_signed_prefix: bool,
     /// Newest parseable manifest found beyond the signed page, if any.
     pub newer_ignored: Option<(u64, u32)>,
+    /// Offset of unsigned bytes following the signed manifest, if any.
+    pub unsigned_tail: Option<u64>,
 }
 
 impl SecurityState {
@@ -115,9 +117,10 @@ impl SecurityState {
             legacy_dialect: AtomicBool::new(false),
             last_manifest: None,
             allow_unsigning: false,
-            min_epoch: 0,
+            freshness: None,
             serve_signed_prefix: false,
             newer_ignored: None,
+            unsigned_tail: None,
         }
     }
 

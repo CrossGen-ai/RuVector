@@ -175,8 +175,8 @@ impl VectorStore for VerifiedVectors {
 
 /// What the incremental parser reports.
 pub(crate) enum VecEvent<'a> {
-    /// The segment declares `count` records of dimension `dim` (bounded by its
-    /// verified payload length): reserve room.
+    /// Room for `count` more records of dimension `dim`, sized from the bytes
+    /// just received (never from a declared size).
     Reserve { count: usize, dim: usize },
     /// One complete record.
     Record(u64, &'a [f32]),
@@ -261,15 +261,17 @@ impl VecParse {
                     self.dead = true;
                     return;
                 }
-                // The count is bounded by the verified payload length above,
-                // so this reservation is bounded by the segment's own size.
-                emit(VecEvent::Reserve {
-                    count: self.remaining as usize,
-                    dim: self.dim,
-                });
             }
         }
         let rec = 8 + 4 * self.dim;
+        // F4-01: reserve only for the bytes in hand (never from the declared
+        // count or segment size), so memory follows received bytes.
+        if self.dim != 0 && !b.is_empty() && self.remaining > 0 {
+            emit(VecEvent::Reserve {
+                count: (b.len() / rec + 1).min(self.remaining as usize),
+                dim: self.dim,
+            });
+        }
         while !b.is_empty() && self.remaining > 0 {
             if self.carry.is_empty() && b.len() >= rec {
                 self.record(&b[..rec], emit);
