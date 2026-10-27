@@ -1883,6 +1883,7 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "mime_guess",
+ "rvf-crypto",
  "rvf-runtime",
  "rvf-types",
  "rvf-wire",

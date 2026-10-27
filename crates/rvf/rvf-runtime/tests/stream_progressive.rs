@@ -6,6 +6,7 @@ mod fx;
 
 use fx::*;
 use rvf_runtime::progressive_stream::client::{ClientConfig, MemTransport, RunEnd, StreamClient};
+use rvf_runtime::progressive_stream::{QueryMode, QueryPath};
 use rvf_runtime::{QueryOptions, RvfStore};
 use rvf_wire::stream::{IdentityStatus, StreamPolicy, StreamState};
 
@@ -58,8 +59,19 @@ fn queries_before_complete_return_only_verified_unsealed_data() {
             );
         }
         let l = ing.layers();
-        if !l.layer_a && !a.envelope.results.is_empty() {
+        // The layers are never searched before Layer A is verified; the exact
+        // scan over verified vectors may answer earlier and says so.
+        let layers_only = ing.query_with(&q, 10, 64, QueryMode::LayersOnly);
+        if !l.layer_a && !layers_only.envelope.results.is_empty() {
             before_a_empty = false;
+        }
+        if !l.layer_c && !a.envelope.results.is_empty() {
+            assert_eq!(a.path, QueryPath::ArrivedScan);
+            assert!(a.coverage_vectors <= 1.0 && !a.sealed);
+            assert_eq!(
+                a.envelope.results[0].retrieval_quality,
+                rvf_types::quality::RetrievalQuality::BruteForceBudgeted
+            );
         }
         for r in &a.envelope.results {
             assert!(

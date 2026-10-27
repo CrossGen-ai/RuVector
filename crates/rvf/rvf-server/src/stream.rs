@@ -28,6 +28,9 @@ use rvf_runtime::progressive_stream::build::{descriptor_for, BuildParams};
 use rvf_runtime::progressive_stream::plan::StreamPlan;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+/// Bytes of the frame stream handed to the socket per send.
+const SEND_PIECE: u64 = 128 << 10;
+
 /// Stream server configuration.
 #[derive(Clone, Debug)]
 pub struct StreamServerConfig {
@@ -237,41 +240,30 @@ async fn body(State(s): State<Arc<StreamServer>>, headers: HeaderMap) -> Respons
     };
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(4);
     let srv = s.clone();
-    // The permit belongs to the producer: it is released when the response is
-    // finished, when the client goes away, or when the client stops reading
-    // for `idle_timeout` / the response exceeds `total_deadline`.
-    tokio::task::spawn_blocking(move || {
+    // The permit belongs to the producer task: it is released when the
+    // response is finished, when the client goes away, or when the client stops
+    // reading for `idle_timeout` / the response exceeds `total_deadline`.
+    tokio::spawn(async move {
         let _permit = permit;
         let started = Instant::now();
         let (idle, deadline) = (srv.cfg.idle_timeout, srv.cfg.total_deadline);
-        let send = |chunk: Vec<u8>| -> bool {
-            let mut item = Ok(Bytes::from(chunk));
-            let waiting = Instant::now();
-            loop {
-                match tx.try_send(item) {
-                    Ok(()) => return true,
-                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return false,
-                    Err(tokio::sync::mpsc::error::TrySendError::Full(back)) => {
-                        if waiting.elapsed() > idle || started.elapsed() > deadline {
-                            return false;
-                        }
-                        item = back;
-                        std::thread::sleep(Duration::from_millis(2));
-                    }
-                }
+        let mut at = start;
+        while at < end {
+            if started.elapsed() > deadline {
+                return;
             }
-        };
-        let mut acc: Vec<u8> = Vec::with_capacity(128 << 10);
-        let mut open = true;
-        srv.plan.write_range(&srv.body, start, end, &mut |piece| {
-            acc.extend_from_slice(piece);
-            if acc.len() >= 64 << 10 {
-                open = send(std::mem::take(&mut acc));
+            let to = (at + SEND_PIECE).min(end);
+            let mut piece = Vec::with_capacity((to - at) as usize);
+            srv.plan.write_range(&srv.body, at, to, &mut |b| {
+                piece.extend_from_slice(b);
+                true
+            });
+            // `send_timeout` parks the task (no polling) until the client
+            // reads, and gives up after `idle`.
+            if tx.send_timeout(Ok(Bytes::from(piece)), idle).await.is_err() {
+                return;
             }
-            open
-        });
-        if open && !acc.is_empty() {
-            let _ = send(acc);
+            at = to;
         }
     });
     let stream =

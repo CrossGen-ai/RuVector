@@ -78,6 +78,39 @@ pub fn b6(f: &Fix) {
 }
 
 // ---------------------------------------------------------------- B7
+/// Median and spread of `reps` timings (seconds) of `f`.
+pub fn median_spread(reps: usize, mut f: impl FnMut()) -> (f64, f64, f64) {
+    let mut t: Vec<f64> = (0..reps)
+        .map(|_| {
+            let t0 = Instant::now();
+            f();
+            t0.elapsed().as_secs_f64()
+        })
+        .collect();
+    t.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    (t[reps / 2], t[0], t[reps - 1])
+}
+
+/// Which SHA-256 the consumers actually link, and how fast it is.
+pub fn hash_backends() {
+    let data = vec![0x5au8; 64 << 20];
+    println!("\n== SHA-256 backend throughput (64 MiB, 7 runs) ==");
+    println!(
+        "cpu sha_ni flag: {}",
+        std::fs::read_to_string("/proc/cpuinfo")
+            .unwrap_or_default()
+            .contains(" sha_ni")
+    );
+    let (m, lo, hi) = median_spread(7, || {
+        std::hint::black_box(rvf_crypto::stream_sha256(std::hint::black_box(&data)));
+    });
+    println!("rvf_crypto::stream_sha256 (what rvf-wire/runtime/server use): {:.2} GB/s median (min {:.2} max {:.2})", 0.064 * 1.048576 / m, 0.064 * 1.048576 / hi, 0.064 * 1.048576 / lo);
+    let (m, lo, hi) = median_spread(3, || {
+        std::hint::black_box(rvf_types::sha256::sha256(std::hint::black_box(&data)));
+    });
+    println!("rvf_types::sha256 (portable fallback):                         {:.2} GB/s median (min {:.2} max {:.2})", 0.064 * 1.048576 / m, 0.064 * 1.048576 / hi, 0.064 * 1.048576 / lo);
+}
+
 pub fn b7() {
     println!("\n== B7 verify-before-allocate latency (budget 500 ms) ==");
     let key = SigningKey::from_bytes(&KEY);
@@ -258,4 +291,142 @@ pub fn b8(f: &Fix) {
             );
         }
     }
+}
+
+/// B9: per-frame ingest cost on a 256 MiB body of VEC segments (no index).
+/// Splits verifier-only cost from the full `StreamIngest::feed`.
+pub fn b9() {
+    use rvf_runtime::progressive_stream::StreamIngest;
+    println!("\n== B9 ingest throughput, 256 MiB of VEC segments (dim 128), 7 runs ==");
+    let dim = 128usize;
+    let per_seg = 20_000usize;
+    let segs = 256 * 1024 * 1024 / (per_seg * (8 + 4 * dim)) + 1;
+    let mut body = Vec::new();
+    let mut id = 0u64;
+    for s in 0..segs {
+        let mut p = Vec::with_capacity(6 + per_seg * (8 + 4 * dim));
+        p.extend_from_slice(&(dim as u16).to_le_bytes());
+        p.extend_from_slice(&(per_seg as u32).to_le_bytes());
+        for _ in 0..per_seg {
+            p.extend_from_slice(&id.to_le_bytes());
+            for d in 0..dim {
+                p.extend_from_slice(&((id as f32) * 0.001 + d as f32).to_le_bytes());
+            }
+            id += 1;
+        }
+        body.extend(rvf_wire::writer::write_segment_with_algo(
+            0x01,
+            &p,
+            rvf_types::SegmentFlags::empty(),
+            s as u64 + 1,
+            2,
+        ));
+    }
+    let key = SigningKey::from_bytes(&KEY);
+    let keys = [key.verifying_key().to_bytes()];
+    let bundle = StreamDescriptorBuilder::new([4; 16], key)
+        .chunk_log2(16)
+        .build(&body)
+        .unwrap();
+    let stream: Vec<u8> = bundle.frames_file_order(&body).flatten().collect();
+    println!(
+        "body {} MiB, stream {} MiB, {} vectors",
+        body.len() >> 20,
+        stream.len() >> 20,
+        id
+    );
+    let mb = stream.len() as f64 / 1e6;
+    let (m, lo, hi) = median_spread(7, || {
+        let mut v = StreamVerifier::new(StreamPolicy::new(&keys));
+        let mut at = 0;
+        while at < stream.len() {
+            let t = stream[at];
+            let n = match t {
+                0 => 5 + u32::from_le_bytes(stream[at + 1..at + 5].try_into().unwrap()) as usize,
+                1 => 17 + u32::from_le_bytes(stream[at + 13..at + 17].try_into().unwrap()) as usize,
+                _ => {
+                    13 + 32
+                        * u32::from_le_bytes(stream[at + 9..at + 13].try_into().unwrap()) as usize
+                }
+            };
+            v.push(&stream[at..at + n]).unwrap();
+            at += n;
+        }
+    });
+    println!(
+        "verifier only (pre-framed):   {:>7.0} MB/s median  (min {:.0} max {:.0})",
+        mb / m,
+        mb / hi,
+        mb / lo
+    );
+    let (m, lo, hi) = median_spread(7, || {
+        let mut ing = StreamIngest::new(StreamPolicy::new(&keys));
+        for c in stream.chunks(64 * 1024) {
+            assert!(ing.feed(c).refused.is_none());
+        }
+        assert_eq!(ing.vectors().len() as u64, id);
+    });
+    println!(
+        "StreamIngest::feed (64 KiB):  {:>7.0} MB/s median  (min {:.0} max {:.0})",
+        mb / m,
+        mb / hi,
+        mb / lo
+    );
+}
+
+/// B10: loopback throughput of the HTTP stream path (no throttle).
+pub fn b10(f: &Fix) {
+    use rvf_runtime::progressive_stream::client::{ClientConfig, StreamClient, Transport};
+    use rvf_server::stream_client::HttpTransport;
+    println!("\n== B10 HTTP stream throughput on loopback (7 runs) ==");
+    let (addr, srv, _rt) = start_server(f, 16);
+    let mb = srv.stream_len() as f64 / 1e6;
+    println!("stream {:.1} MB", mb);
+    let (m, lo, hi) = median_spread(7, || {
+        let mut t = HttpTransport::new(addr.to_string(), "/v1/stream/body");
+        let mut n = 0u64;
+        t.fetch(0, &mut |b| {
+            n += b.len() as u64;
+            true
+        })
+        .unwrap();
+        assert_eq!(n, srv.stream_len());
+    });
+    println!(
+        "raw download (discard):        {:>7.0} MB/s median (min {:.0} max {:.0})",
+        mb / m,
+        mb / hi,
+        mb / lo
+    );
+    let keys = [pubkey()];
+    let (m, lo, hi) = median_spread(5, || {
+        let mut c = StreamClient::new(
+            StreamPolicy::new(&keys),
+            HttpTransport::new(addr.to_string(), "/v1/stream/body"),
+            ClientConfig::default(),
+        );
+        assert!(c.run(&mut |_| {}).all_verified());
+    });
+    println!(
+        "download + verify + ingest:    {:>7.0} MB/s median (min {:.0} max {:.0})",
+        mb / m,
+        mb / hi,
+        mb / lo
+    );
+    let (m, lo, hi) = median_spread(7, || {
+        let mut n = 0u64;
+        let s = srv.stream_len();
+        let mut at = 0;
+        while at < s {
+            n += srv.read_range(at, (at + (1 << 20)).min(s)).len() as u64;
+            at += 1 << 20;
+        }
+        assert_eq!(n, s);
+    });
+    println!(
+        "server read_range only (1 MiB): {:>6.0} MB/s median (min {:.0} max {:.0})",
+        mb / m,
+        mb / hi,
+        mb / lo
+    );
 }

@@ -14,14 +14,17 @@
 //!
 //! The reassembly buffer holds at most one frame plus the slice being fed.
 
+mod query;
+pub use query::QueryMode;
+
 use super::layers::{decode_a, decode_b, MAGIC_A, MAGIC_B};
-use super::vectors::{VecParse, VerifiedVectors};
+use super::vectors::{VecEvent, VecParse, VerifiedVectors};
 use crate::index_path::decode_graph;
 use crate::options::{QualityEnvelope, SearchResult};
 use rvf_index::{LayerC, ProgressiveIndex};
 use rvf_types::quality::{
-    BudgetReport, DegradationReason, DegradationReport, FallbackPath, IndexLayersUsed,
-    ResponseQuality, RetrievalQuality, SearchEvidenceSummary,
+    DegradationReason, DegradationReport, FallbackPath, IndexLayersUsed, ResponseQuality,
+    RetrievalQuality, SearchEvidenceSummary,
 };
 use rvf_types::ErrorCode;
 use rvf_wire::stream::{
@@ -86,6 +89,25 @@ pub struct StreamAnswer {
     pub verified_bytes: u64,
     /// Visible vectors.
     pub visible_vectors: usize,
+    /// How the results were produced.
+    pub path: QueryPath,
+    /// Visible vectors as a fraction of the vectors the signed table says
+    /// the stream will carry (1.0 once all arrived). Results from a scan or
+    /// from partial layers cover only this fraction of the data.
+    pub coverage_vectors: f64,
+    /// Verified bytes as a fraction of the stream body.
+    pub coverage_bytes: f64,
+}
+
+/// How a query was answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QueryPath {
+    /// Nothing to search yet.
+    Empty,
+    /// Exact scan over the verified vectors received so far.
+    ArrivedScan,
+    /// `rvf-index` `ProgressiveIndex` over the published layers.
+    Layers,
 }
 
 enum Parse {
@@ -107,6 +129,9 @@ pub struct StreamIngest<'p> {
     witnesses: Vec<StreamWitness>,
     unpublished: bool,
     dropped_witnesses: u64,
+    vec_stored_bytes: u64,
+    scan_bound: std::time::Duration,
+    scan_ns_per_vec: std::cell::Cell<f64>,
     buffered: u64,
     buffer_budget: u64,
     pins: Option<&'p dyn rvf_wire::stream::PinStore>,
@@ -128,6 +153,9 @@ impl<'p> StreamIngest<'p> {
             witnesses: Vec::new(),
             unpublished: false,
             dropped_witnesses: 0,
+            vec_stored_bytes: 0,
+            scan_bound: std::time::Duration::from_millis(25),
+            scan_ns_per_vec: std::cell::Cell::new(0.0),
             buffered: 0,
             buffer_budget: DEFAULT_BUFFER_BUDGET,
         }
@@ -350,6 +378,12 @@ impl<'p> StreamIngest<'p> {
                         .iter()
                         .map(|e| (e.seg_id, (e.seg_type, e.stored_len)))
                         .collect();
+                    self.vec_stored_bytes = d
+                        .entries
+                        .iter()
+                        .filter(|e| e.seg_type == SEG_VEC)
+                        .map(|e| e.stored_len)
+                        .sum();
                 }
                 self.witness(StreamWitness::DescriptorVerified(descriptor_hash));
             }
@@ -393,9 +427,15 @@ impl<'p> StreamIngest<'p> {
             Parse::Vec(vp) => {
                 let want = self.vectors.dimension_hint();
                 let vecs = &mut self.vectors;
-                vp.feed(bytes, want, &mut |id, v| {
-                    vecs.set_dim(v.len());
-                    vecs.insert(id, v);
+                vp.feed(bytes, want, &mut |ev| match ev {
+                    VecEvent::Reserve { count, dim } => {
+                        vecs.set_dim(dim);
+                        vecs.reserve(count);
+                    }
+                    VecEvent::Record(id, v) => {
+                        vecs.set_dim(v.len());
+                        vecs.insert(id, v);
+                    }
                 });
             }
             Parse::Buf(b) => b.extend_from_slice(bytes),
@@ -477,77 +517,6 @@ impl<'p> StreamIngest<'p> {
                     self.verifier.poison(ErrorCode::StreamTableInvalid);
                 }
             }
-        }
-    }
-
-    /// k-NN over what is verified so far.
-    ///
-    /// Searches with `rvf-index`'s `ProgressiveIndex` over verified vectors
-    /// only. Before Layer A is published the answer is empty and `Unreliable`.
-    /// The estimates in `rvf_index::layers::available_recall` are never used
-    /// here; measure recall instead.
-    pub fn query(&self, q: &[f32], k: usize, ef: usize) -> StreamAnswer {
-        let t0 = std::time::Instant::now();
-        let layers = self.layers();
-        let state = self.verifier.state();
-        // `sealed` is a derived release: re-check the epoch pin now (ADR-353 section 7),
-        // so a session superseded since completion is never reported as final.
-        let sealed = state == StreamState::Complete
-            && self
-                .pins
-                .is_none_or(|st| self.verifier.recheck_pin(st).is_ok());
-        let mut hits =
-            if layers.layer_a && !self.unpublished && q.len() == self.vectors.dimension_hint() {
-                self.index
-                    .search(q, k + self.deleted.len().min(k), ef, &self.vectors)
-            } else {
-                Vec::new()
-            };
-        hits.retain(|(id, _)| !self.deleted.contains(id) && self.vectors.contains(*id));
-        hits.truncate(k);
-        let rq = match (layers.layer_b, layers.layer_c) {
-            (_, true) => RetrievalQuality::Full,
-            (true, false) => RetrievalQuality::Partial,
-            _ => RetrievalQuality::LayerAOnly,
-        };
-        let quality = if hits.is_empty() {
-            ResponseQuality::Unreliable
-        } else if sealed && layers.layer_c {
-            ResponseQuality::Verified
-        } else {
-            ResponseQuality::Usable
-        };
-        let degradation = (!(sealed && layers.layer_c)).then_some(DegradationReport {
-            fallback_path: FallbackPath::None,
-            reason: DegradationReason::IndexNotLoaded { available: layers },
-            guarantee_lost: "index layers and vectors still arriving; not sealed",
-        });
-        StreamAnswer {
-            envelope: QualityEnvelope {
-                results: hits
-                    .into_iter()
-                    .map(|(id, distance)| SearchResult {
-                        id,
-                        distance,
-                        retrieval_quality: rq,
-                        metadata: None,
-                    })
-                    .collect(),
-                quality,
-                evidence: SearchEvidenceSummary {
-                    layers_used: layers,
-                    ..Default::default()
-                },
-                budgets: BudgetReport {
-                    total_us: t0.elapsed().as_micros() as u64,
-                    ..Default::default()
-                },
-                degradation,
-            },
-            sealed,
-            state,
-            verified_bytes: self.verifier.verified_bytes(),
-            visible_vectors: self.vectors.len(),
         }
     }
 }

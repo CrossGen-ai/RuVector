@@ -865,6 +865,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "mime_guess",
+ "rvf-crypto",
  "rvf-runtime",
  "rvf-types",
  "rvf-wire",

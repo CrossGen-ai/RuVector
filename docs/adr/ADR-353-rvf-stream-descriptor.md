@@ -161,3 +161,12 @@ Negative: a new signed artifact to produce, distribute and pin; descriptor gener
 ## What this ADR does not claim
 
 It does not make RVM execute WASM: `ruvnet/rvm` has no execution engine today (RVM ADR-160). It does not change legacy files or readers. Benchmarks and measured numbers belong to the implementation, not to this ADR.
+
+## Measured on the ruvector side (project Ofer, optimize pass)
+
+Release builds, this workstation (32 threads, SHA-NI), load average 2-3, medians of at least 7 runs unless stated. 100k x 128 clustered vectors, 62 MB stream.
+
+- **Query policy before Layer C (B2, recall@10 against exact ground truth).** `ProgressiveIndex` layers were worse than an exact scan over the vectors already verified; `StreamIngest::query` now scans the arrived vectors while the scan fits a latency bound (default 25 ms, calibrated from the measured per-vector cost) and reports `coverage_vectors`, `QueryPath::ArrivedScan` and `sealed = false`. Layers only: A 0.197, A+B 0.032, 40% of bytes 0.030, 60% 0.054, 80% 0.092, all vectors 0.106. Auto policy: 0.197, 0.197, 0.365, 0.601, 0.852, 1.000 (p95 latency 0.7, 0.7, 1.2, 2.1, 2.9-3.0, 3.4 ms). Layer C (0.953, 0.45 ms) answers once published.
+- **Ingest (B9, 256 MiB of vectors).** Verifier alone 1.33 GB/s (two SHA-256 passes per byte in file order); `StreamIngest::feed` 757 -> 866 MB/s (+14%) by reserving arena room from the verified segment count and reusing the record buffer.
+- **HTTP stream path (B10, loopback).** Raw download 12.1 GB/s; download + verify + ingest 743 MB/s (client bound). The idle-timeout rewrite (F2-05) briefly polled with sleeps and dropped raw download to 0.28 GB/s; it now parks on `send_timeout` and matches the pre-F2-05 12.2 GB/s.
+- **SHA-256.** Every native consumer links `sha2` with runtime CPU detection: 2.70 GB/s with SHA-NI against 0.45 GB/s for the portable fallback, which only the wasm crates use.

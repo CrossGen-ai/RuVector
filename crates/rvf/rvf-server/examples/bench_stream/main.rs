@@ -23,14 +23,21 @@ fn main() {
         "n={n} dim={dim} clusters={clusters} release={}",
         !cfg!(debug_assertions)
     );
-    let f = fixture(n, dim, clusters, &cache);
+    let f = if only == "b9" || only == "hash" {
+        None
+    } else {
+        Some(fixture(n, dim, clusters, &cache))
+    };
     for w in only.split(',') {
         match w {
-            "b1" => b1_b2::b1(&f, n, dim),
-            "b2" => b1_b2::b2(&f),
-            "b6" => b6_b8::b6(&f),
+            "b1" => b1_b2::b1(f.as_ref().unwrap(), n, dim),
+            "b2" => b1_b2::b2(f.as_ref().unwrap()),
+            "b6" => b6_b8::b6(f.as_ref().unwrap()),
             "b7" => b6_b8::b7(),
-            "b8" => b6_b8::b8(&f),
+            "hash" => b6_b8::hash_backends(),
+            "b9" => b6_b8::b9(),
+            "b10" => b6_b8::b10(f.as_ref().unwrap()),
+            "b8" => b6_b8::b8(f.as_ref().unwrap()),
             _ => {}
         }
     }

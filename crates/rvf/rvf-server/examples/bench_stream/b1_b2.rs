@@ -125,10 +125,12 @@ pub fn b1(f: &Fix, n: usize, dim: usize) {
 
 // ---------------------------------------------------------------- B2
 pub fn b2(f: &Fix) {
+    use rvf_runtime::progressive_stream::{QueryMode, QueryPath};
     println!(
         "\n== B2 recall@10 vs bytes received (ef=256; exact ground truth over all {} vectors) ==",
         f.ds.len()
     );
+    println!("layers = old behaviour (ProgressiveIndex only); auto = scan-or-layers policy; p95 is per-query latency of the auto answer");
     let (body, bundle) = descriptor_for(
         &f.path,
         f.file_id,
@@ -146,60 +148,74 @@ pub fn b2(f: &Fix) {
         ClientConfig::default(),
     );
     println!(
-        "{:<28} {:>12} {:>7} | {:>10} {:>12} {:>10}",
-        "checkpoint", "bytes", "% body", "visible", "recall@10", "scan-recall"
+        "{:<26} {:>11} {:>6} | {:>8} {:>8} | {:>9} {:>9} {:>6} {:>9} {:>9}",
+        "checkpoint",
+        "bytes",
+        "%body",
+        "visible",
+        "cover",
+        "layers",
+        "auto",
+        "path",
+        "auto p95",
+        "scan-only"
     );
-    let mut seen = (false, false, false, false);
     let total = stream.len() as f64;
     let n = f.ds.len();
+    let mut seen = [false; 7];
     c.run(&mut |ing| {
         let l = ing.layers();
+        let frac = ing.offset() as f64 / total;
         let all = ing.vectors().len() == n;
-        let cond = [
-            ("layer A (+hot vectors)", l.layer_a && !seen.0),
-            ("A+B", l.layer_b && !seen.1),
-            ("A+B, all vectors arrived", l.layer_b && all && !seen.2),
-            ("A+B+C (complete)", l.layer_c && !seen.3),
+        let cond: [(&str, bool); 7] = [
+            ("layer A (+hot vectors)", l.layer_a),
+            ("A+B", l.layer_b),
+            ("40% of bytes", frac >= 0.40),
+            ("60% of bytes", frac >= 0.60),
+            ("80% of bytes", frac >= 0.80),
+            ("A+B, all vectors arrived", l.layer_b && all),
+            ("A+B+C (complete)", l.layer_c),
         ];
         for (i, (name, hit)) in cond.iter().enumerate() {
-            if !*hit {
+            if !*hit || seen[i] {
                 continue;
             }
-            match i {
-                0 => seen.0 = true,
-                1 => seen.1 = true,
-                2 => seen.2 = true,
-                _ => seen.3 = true,
-            }
-            let (mut r, mut sr) = (0.0, 0.0);
+            seen[i] = true;
+            let (mut r_layers, mut r_auto, mut r_scan) = (0.0, 0.0, 0.0);
+            let mut lat = Vec::new();
+            let mut path = QueryPath::Empty;
+            let mut cover = 0.0;
             for (q, t) in qs.iter().zip(&truth) {
-                let got: Vec<u64> = ing
-                    .query(q, 10, 256)
-                    .envelope
-                    .results
-                    .iter()
-                    .map(|x| x.id)
-                    .collect();
-                r += recall(&got, t);
-                // exact scan over verified vectors only
-                let mut d: Vec<(f32, u64)> = ing
-                    .vectors()
-                    .iter()
-                    .map(|(id, v)| (v.iter().zip(q).map(|(a, b)| (a - b) * (a - b)).sum(), id))
-                    .collect();
-                d.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                sr += recall(&d.iter().take(10).map(|x| x.1).collect::<Vec<_>>(), t);
+                let ids = |a: &rvf_runtime::progressive_stream::StreamAnswer| -> Vec<u64> {
+                    a.envelope.results.iter().map(|x| x.id).collect()
+                };
+                r_layers += recall(&ids(&ing.query_with(q, 10, 256, QueryMode::LayersOnly)), t);
+                let t0 = Instant::now();
+                let a = ing.query(q, 10, 256);
+                lat.push(t0.elapsed().as_secs_f64() * 1e3);
+                path = a.path;
+                cover = a.coverage_vectors;
+                r_auto += recall(&ids(&a), t);
+                r_scan += recall(&ids(&ing.query_with(q, 10, 256, QueryMode::ScanOnly)), t);
             }
+            lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let k = qs.len() as f64;
             println!(
-                "{:<28} {:>12} {:>6.1}% | {:>10} {:>12.3} {:>10.3}",
+                "{:<26} {:>11} {:>5.1}% | {:>8} {:>7.0}% | {:>9.3} {:>9.3} {:>6} {:>7.2}ms {:>9.3}",
                 name,
                 ing.offset(),
-                100.0 * ing.offset() as f64 / total,
+                100.0 * frac,
                 ing.vectors().len(),
-                r / qs.len() as f64,
-                sr / qs.len() as f64
+                100.0 * cover,
+                r_layers / k,
+                r_auto / k,
+                format!("{path:?}").chars().take(6).collect::<String>(),
+                lat[lat.len() * 95 / 100],
+                r_scan / k
             );
         }
     });
-    println!("(rvf_index::available_recall's 0.70 / 0.85-0.92 / 0.97 are NOT used; the figures above are measured)");
+    println!(
+        "(rvf_index::available_recall's constants are NOT used; the figures above are measured)"
+    );
 }

@@ -13,5 +13,5 @@ pub mod layers;
 pub mod plan;
 pub mod vectors;
 
-pub use ingest::{FeedOutcome, StreamAnswer, StreamIngest, StreamWitness};
+pub use ingest::{FeedOutcome, QueryMode, QueryPath, StreamAnswer, StreamIngest, StreamWitness};
 pub use vectors::VerifiedVectors;
