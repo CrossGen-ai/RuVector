@@ -534,6 +534,50 @@ RVF doesn't make you wait for the full index:
 | **Layer B** | Hot region adjacency | >= 0.85 | ~10 ms |
 | **Layer C** | Full HNSW graph | >= 0.95 | ~50 ms |
 
+These recall figures are design targets (the constants in `rvf-index`'s layer model), not measurements. The measured numbers for answering from a partially delivered file are in [Verified Streaming](#-verified-streaming-project-ofer) below, and they are lower.
+
+### 🌊 Verified Streaming (project Ofer)
+
+Receive an RVF as a stream, verify it chunk by chunk, and answer queries from the bytes that have already been authenticated. Specified in [ADR-353](../../docs/adr/ADR-353-rvf-stream-descriptor.md) (wire format) and [ADR-354](../../docs/adr/ADR-354-rvf-dialect-convergence-and-strict-policy.md) (dialect and Strict policy); the RVM-side admission rules are in `ruvnet/rvm` ADR-160.
+
+**How it works.** A small signed *stream descriptor* (Ed25519, `verify_strict`) commits to every byte of an unchanged RVF body: a table of segments, and per-chunk SHA-256 leaves bound to `(file_id, segment, chunk index, length)`. A receiver verifies the descriptor first, then releases a chunk to any consumer only after its hash matches the descriptor. Truncation, reordering, splicing from another file, replay of an old epoch and bit flips are rejected; authentic duplicate frames are ignored; nothing unverified is ever indexed, queried or executed. Existing `.rvf` files can be streamed by generating a descriptor, with no rewrite.
+
+```rust,ignore
+// Receiver sketch. `trusted` is the set of publisher public keys you accept.
+let policy = StreamPolicy::new(&trusted);
+let mut ingest = StreamIngest::new(policy);
+for bytes in network_reads() {
+    let outcome = ingest.feed(&bytes);   // verifies every chunk before use
+    // ingest.state(): Receiving -> Complete / CompleteUnverified / Suspended / Poisoned
+}
+```
+
+The server side serves `GET /v1/stream/descriptor` and `GET /v1/stream/body` (HTTP Range for resume; stage-ordered frames) and the same over TCP message types `0x05/0x85`.
+
+**What was measured** (one x86_64 workstation, release builds, 100k x 128-d clustered vectors for the query numbers; see the ADR-353 "Measured" section for method and spread):
+
+| Question | Result |
+|---|---|
+| Peak memory, 256 MiB body | **2.7 MiB** streamed vs 258 MiB buffered |
+| Verifier throughput | 1.33 GB/s in file order (two SHA-256 passes per byte; 2.7 GB/s without the identity pass); descriptor overhead 0.052% at 64 KiB chunks; verifying a 4,096-segment descriptor takes 459 us |
+| First answer, 10 Mbps link | 5.9-7.5x earlier than download-then-open (8.4 s vs 49.7 s), **from partial data** |
+| Recall@10 of those early answers | exact scan over the verified vectors received so far: **0.37 / 0.60 / 0.85** at 40% / 60% / 80% of the bytes (the progressive layers measured 0.03 / 0.05 / 0.09 in the same setup); 0.95 after the full index arrives |
+| Total completion time | **no improvement**: 49.58 s streamed vs 49.54 s buffered |
+| Resume | a dropped connection re-sends 0 bytes; a killed process re-hashes about half the stream on average |
+| 64 MiB executable segment | verifies in 51 ms (the Reader budget is 500 ms) |
+| 10% corrupted frames | +12% bytes, -11% goodput; no unverified data was ever served in the tests |
+
+Early answers carry `sealed = false` and report coverage (the fraction of the dataset they were computed from). They are correct for the data received so far, not for the whole dataset, and recall can only approach the received fraction; the benefit is memory, early rejection, resumability and an earlier first answer, not faster completion.
+
+**Strict policy and format changes** ([ADR-354](../../docs/adr/ADR-354-rvf-dialect-convergence-and-strict-policy.md)). `rvf-runtime` 0.4.0 writes the wire dialect (64-byte padded segments, XXH3-128 or SHAKE-256-128 hashes) and still reads legacy files. **Files written by 0.4.0 are not readable by 0.3.x.** `RvfStore::open_with_policy`, `open_signed` and `create_signed` make Strict real (signed manifest and Level-0 page verified, committed hashes and header fields pinned to the signed directory). Plain `open()` stays Permissive, refuses to cut a valid signed page unless `allow_unsigning(true)`, and no in-tree consumer opts into Strict yet. A signed page carries no freshness by itself: use the `min_epoch` option to refuse older signed states.
+
+**Limits you should know.**
+- Stage-ordered delivery finishes as `CompleteUnverified` until the persisted body is re-verified with `finish_identity`; only file-order delivery confirms the whole-body identity on the fly.
+- Defaults are generous (1 TiB body, 8 GiB table cap); use `StreamPolicy::conservative()` or `embedded()` on small hosts.
+- Per-client stream caps key on the socket peer, so clients behind one proxy share a cap.
+- Evaluation of untrusted publishers relies on a trusted-key set you supply; a signature proves who published, not that the content is correct.
+- Not built: starting a component before the whole stream completes, and any execution engine in RVM (admission and validation only).
+
 ---
 
 ## 📊 Comparison
