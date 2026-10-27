@@ -108,6 +108,7 @@ impl Transport for HttpTransport {
             .ok_or_else(|| lie("no address"))?;
         let mut s = TcpStream::connect_timeout(&sa, self.timeout)?;
         s.set_read_timeout(Some(self.timeout))?;
+        s.set_write_timeout(Some(self.timeout))?;
         s.set_nodelay(true)?;
         let req = format!(
             "GET {} HTTP/1.1\r\nHost: rvf\r\nRange: bytes={}-\r\nConnection: close\r\n\r\n",
@@ -197,6 +198,7 @@ impl TcpTransport {
             .ok_or_else(|| lie("no address"))?;
         let s = TcpStream::connect_timeout(&sa, self.timeout)?;
         s.set_read_timeout(Some(self.timeout))?;
+        s.set_write_timeout(Some(self.timeout))?;
         s.set_nodelay(true)?;
         Ok(s)
     }

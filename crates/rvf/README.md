@@ -569,12 +569,14 @@ The server side serves `GET /v1/stream/descriptor` and `GET /v1/stream/body` (HT
 
 Early answers carry `sealed = false` and report coverage (the fraction of the dataset they were computed from). They are correct for the data received so far, not for the whole dataset, and recall can only approach the received fraction; the benefit is memory, early rejection, resumability and an earlier first answer, not faster completion.
 
-**Strict policy and format changes** ([ADR-354](../../docs/adr/ADR-354-rvf-dialect-convergence-and-strict-policy.md)). `rvf-runtime` 0.4.0 writes the wire dialect (64-byte padded segments, XXH3-128 or SHAKE-256-128 hashes) and still reads legacy files. **Files written by 0.4.0 are not readable by 0.3.x.** `RvfStore::open_with_policy`, `open_signed` and `create_signed` make Strict real (signed manifest and Level-0 page verified, committed hashes and header fields pinned to the signed directory). Plain `open()` stays Permissive, refuses to cut a valid signed page unless `allow_unsigning(true)`, and no in-tree consumer opts into Strict yet. A signed page carries no freshness by itself: use the `min_epoch` option to refuse older signed states.
+**Strict policy and format changes** ([ADR-354](../../docs/adr/ADR-354-rvf-dialect-convergence-and-strict-policy.md)). `rvf-runtime` 0.4.0 writes the wire dialect (64-byte padded segments, XXH3-128 or SHAKE-256-128 hashes) and still reads legacy files. **Files written by 0.4.0 are not readable by 0.3.x.** `RvfStore::open_with_policy`, `open_signed` and `create_signed` make Strict real (signed manifest and Level-0 page verified, committed hashes and header fields pinned to the signed directory). Plain `open()` stays Permissive, refuses to cut a valid signed page unless `allow_unsigning(true)`, and no in-tree consumer opts into Strict yet. A signed page carries no freshness by itself: every signature-checking open must choose `RvfOptions::freshness` (`Unchecked` or `MinEpoch(n)`); only `MinEpoch` or an external pin detects replay of an older validly signed file.
 
 **Limits you should know.**
 - Stage-ordered delivery finishes as `CompleteUnverified` until the persisted body is re-verified with `finish_identity`; only file-order delivery confirms the whole-body identity on the fly.
 - Defaults are generous (1 TiB body, 8 GiB table cap); use `StreamPolicy::conservative()` or `embedded()` on small hosts.
-- Per-client stream caps key on the socket peer, so clients behind one proxy share a cap.
+- Per-client stream caps key on the socket peer and its IPv4 /24 or IPv6 /64 prefix, so clients behind one proxy or NAT share a cap. A many-prefix attacker can still exhaust the stream pool (8 distinct /24s reading at about 400 KB/s fill 8 slots); the reserve and slow-stream budget only leave room for fast and new-prefix clients.
+- Strict proves authenticity, not freshness, unless `MinEpoch` or an external pin is used.
+- Client memory grows with the bytes streamed (verified vectors and layers are retained); size the host and the ingest budget for the artifact.
 - Evaluation of untrusted publishers relies on a trusted-key set you supply; a signature proves who published, not that the content is correct.
 - Not built: starting a component before the whole stream completes, and any execution engine in RVM (admission and validation only).
 

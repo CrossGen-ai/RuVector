@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use support::*;
 
 fn open_stream(addr: std::net::SocketAddr) -> TcpStream {
-    let mut s = TcpStream::connect(addr).unwrap();
+    let mut s = connect(addr);
     s.write_all(b"GET /v1/stream/body HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
         .unwrap();
     s
@@ -124,7 +124,10 @@ fn f4_06_two_addresses_cannot_pin_the_pool() {
             );
             c.write_all(req.as_bytes()).await.unwrap();
             let mut b = vec![0u8; 64];
-            let n = c.read(&mut b).await.unwrap();
+            let n = tokio::time::timeout(std::time::Duration::from_secs(20), c.read(&mut b))
+                .await
+                .expect("read timed out")
+                .unwrap();
             (String::from_utf8_lossy(&b[..n.min(20)]).to_string(), c)
         };
         let mut held = Vec::new();

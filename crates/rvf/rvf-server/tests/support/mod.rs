@@ -23,31 +23,29 @@ pub fn public_key() -> [u8; 32] {
         .to_bytes()
 }
 
-/// Build (or reuse `OFER_STREAM_CACHE/<n>x<dim>.rvf`) a stream-ready store.
+/// Build (or reuse) a stream-ready store. Stores are cached under
+/// `OFER_STREAM_CACHE`, or by default under `CARGO_TARGET_TMPDIR`, keyed by
+/// (n, dim, clusters, seed), so only the first run pays the build.
 pub fn fixture(n: usize, dim: usize, clusters: usize, seed: u64) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let ds = StreamDataset::clustered(n, dim, clusters, 0.4, seed);
-    let rvf = match std::env::var_os("OFER_STREAM_CACHE") {
-        Some(c) => {
-            let p = PathBuf::from(c).join(format!("{n}x{dim}.rvf"));
-            if !p.exists() {
-                std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-                let tmp = p.with_extension("tmp");
-                let _ = std::fs::remove_file(&tmp);
-                build_stream_store(&tmp, &ds, &BuildParams::default(), &[9u8; 32]).unwrap();
-                std::fs::rename(&tmp, &p).unwrap();
-            }
-            p
+    let cache = std::env::var_os("OFER_STREAM_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("ofer-stream-cache"));
+    let rvf = {
+        let p = cache.join(format!("{n}x{dim}c{clusters}s{seed}.rvf"));
+        if !p.exists() {
+            std::fs::create_dir_all(&cache).unwrap();
+            // Unique temp name: parallel tests may build the same fixture.
+            let tmp = cache.join(format!(
+                "{n}x{dim}c{clusters}s{seed}.{}.{:?}.tmp",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            build_stream_store(&tmp, &ds, &BuildParams::default(), &[9u8; 32]).unwrap();
+            std::fs::rename(&tmp, &p).unwrap();
         }
-        None => {
-            let p = dir.path().join("s.rvf");
-            let bp = BuildParams {
-                vec_batch: 700,
-                ..Default::default()
-            };
-            build_stream_store(&p, &ds, &bp, &[9u8; 32]).unwrap();
-            p
-        }
+        p
     };
     let keyfile = dir.path().join("desc.key");
     std::fs::write(
@@ -127,13 +125,24 @@ pub fn start(f: &Fixture, tweak: impl FnOnce(&mut StreamServerConfig)) -> Runnin
     }
 }
 
+/// Connect with explicit read and write timeouts, so a wedged server fails a
+/// test instead of hanging it.
+pub fn connect(addr: SocketAddr) -> TcpStream {
+    let s = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10)).unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        .unwrap();
+    s.set_write_timeout(Some(std::time::Duration::from_secs(30)))
+        .unwrap();
+    s
+}
+
 /// Raw HTTP/1.1 request returning (status, headers-lowercased, body bytes read).
 pub fn raw_get(
     addr: SocketAddr,
     path: &str,
     range: Option<&str>,
 ) -> (u16, Vec<(String, String)>, Vec<u8>) {
-    let mut s = TcpStream::connect(addr).unwrap();
+    let mut s = connect(addr);
     let r = range.map(|r| format!("Range: {r}\r\n")).unwrap_or_default();
     write!(
         s,

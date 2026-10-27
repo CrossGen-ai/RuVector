@@ -21,7 +21,7 @@ fn f2_05_silent_clients_do_not_pin_stream_slots() {
     );
     let mut held = Vec::new();
     for _ in 0..2 {
-        let mut s = TcpStream::connect(r.http).unwrap();
+        let mut s = connect(r.http);
         s.write_all(b"GET /v1/stream/body HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
             .unwrap();
         held.push(s); // never read
@@ -36,7 +36,7 @@ fn f2_05_silent_clients_do_not_pin_stream_slots() {
     );
     // ... and TCP 0x05 is a separate pool: it is served.
     let tcp_req = |addr| {
-        let mut t = TcpStream::connect(addr).unwrap();
+        let mut t = connect(addr);
         let mut p = vec![1u8];
         p.extend_from_slice(&0u64.to_be_bytes());
         p.extend_from_slice(&100u32.to_be_bytes());
@@ -55,7 +55,7 @@ fn f2_05_silent_clients_do_not_pin_stream_slots() {
     drop(held);
 
     // A silent TCP socket is closed by the server after the idle timeout.
-    let mut silent = TcpStream::connect(r.tcp).unwrap();
+    let mut silent = connect(r.tcp);
     silent
         .set_read_timeout(Some(Duration::from_secs(4)))
         .unwrap();
@@ -81,7 +81,7 @@ fn f2_oracle_hostile_inputs_do_not_panic() {
         x
     };
     for i in 0..300 {
-        let mut t = TcpStream::connect(r.tcp).unwrap();
+        let mut t = connect(r.tcp);
         t.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let plen = (rnd() % 20) as usize;
         let mut p: Vec<u8> = (0..plen).map(|_| rnd() as u8).collect();
@@ -109,7 +109,7 @@ fn f2_oracle_hostile_inputs_do_not_panic() {
         eprintln!("{rg:?} -> {st}");
     }
     // TCP offset u64::MAX, max_len u32::MAX
-    let mut t = TcpStream::connect(r.tcp).unwrap();
+    let mut t = connect(r.tcp);
     let mut p = vec![1u8];
     p.extend_from_slice(&(u64::MAX - 5).to_be_bytes());
     p.extend_from_slice(&u32::MAX.to_be_bytes());
