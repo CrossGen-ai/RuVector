@@ -163,6 +163,8 @@ pub enum ErrorCode {
     // 0x0818 is reserved (never assigned).
     /// Frame pushed in a state that cannot accept it.
     StreamBadState = 0x0819,
+    /// Too many idempotent duplicate frames (retransmit flood).
+    StreamDuplicateFlood = 0x081A,
 
     // ---- Category 0x09: Quality Errors (ADR-033) ----
     /// Query result quality is below threshold and AcceptDegraded not set.
@@ -306,6 +308,7 @@ impl TryFrom<u16> for ErrorCode {
             0x0816 => Ok(Self::StreamWeakChecksum),
             0x0817 => Ok(Self::StreamPoisoned),
             0x0819 => Ok(Self::StreamBadState),
+            0x081A => Ok(Self::StreamDuplicateFlood),
 
             0x0900 => Ok(Self::QualityBelowThreshold),
             0x0901 => Ok(Self::BudgetTokensExhausted),
@@ -445,6 +448,7 @@ mod tests {
             (0x0816, ErrorCode::StreamWeakChecksum),
             (0x0817, ErrorCode::StreamPoisoned),
             (0x0819, ErrorCode::StreamBadState),
+            (0x081A, ErrorCode::StreamDuplicateFlood),
             (0x0900, ErrorCode::QualityBelowThreshold),
             (0x0901, ErrorCode::BudgetTokensExhausted),
             (0x0902, ErrorCode::QueryBlacklisted),

@@ -150,6 +150,31 @@ proptest! {
         }
     }
 
+    /// Authentic duplicates alone (copies of chunk or descriptor frames re-sent later) are
+    /// idempotent: with a zero fault budget the stream still completes with the same
+    /// released set.
+    #[test]
+    fn duplicates_alone_still_complete(picks in proptest::collection::vec((any::<usize>(), any::<usize>()), 0..12)) {
+        let f = fix();
+        let mut fr = f.frames.clone();
+        for (a, b) in picks {
+            let i = a % fr.len();
+            if fr[i][0] == 2 { continue; }
+            let at = i + 1 + b % (fr.len() - i);
+            fr.insert(at.min(fr.len()), fr[i].clone());
+        }
+        let mut v = StreamVerifier::new(pol(f, 0));
+        let mut rel = Vec::new();
+        for x in &fr {
+            if let Ok(Event::Chunk { chunk, .. }) = v.push(x) {
+                rel.push((chunk.body_offset, chunk.bytes.to_vec()));
+            }
+        }
+        prop_assert_eq!(v.state(), StreamState::Complete);
+        let clean = run_frames(f.frames.clone(), pol(f, 0));
+        prop_assert_eq!(rel, clean.released);
+    }
+
     /// P1 with fully arbitrary frames after a valid descriptor.
     #[test]
     fn p1_arbitrary_bytes(frames in proptest::collection::vec(proptest::collection::vec(any::<u8>(), 0..80), 0..20)) {

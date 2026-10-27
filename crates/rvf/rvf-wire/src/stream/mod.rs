@@ -63,10 +63,13 @@ pub struct StreamPolicy<'a> {
     pub expected_policy_hash: Option<[u8; 32]>,
     /// Counted faults tolerated before the stream is poisoned.
     pub fault_budget: u32,
-    /// Cap on chunk-table bytes held at once (tables of segments whose table
-    /// was accepted but which are not yet fully verified). A table frame that
-    /// would exceed it is refused before anything is allocated.
-    pub max_outstanding_table_bytes: u64,
+    /// Cap on chunk-table bytes retained (accepted tables are kept so that
+    /// duplicate chunks of finished segments can be checked). A table frame
+    /// that would exceed it is refused before anything is allocated.
+    pub max_table_bytes: u64,
+    /// Cap on idempotent duplicate frames; `None` = `4 * total chunks + 64`.
+    /// Exceeding it poisons the stream (`StreamDuplicateFlood`).
+    pub max_duplicate_frames: Option<u64>,
 }
 
 impl<'a> StreamPolicy<'a> {
@@ -84,7 +87,8 @@ impl<'a> StreamPolicy<'a> {
             now_ns: None,
             expected_policy_hash: None,
             fault_budget: 4,
-            max_outstanding_table_bytes: 64 << 20,
+            max_table_bytes: 64 << 20,
+            max_duplicate_frames: None,
         }
     }
 

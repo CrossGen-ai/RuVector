@@ -242,7 +242,7 @@ fn p7_whole_stream_peak_is_descriptor_plus_one_frame_plus_tables() {
     );
 }
 
-/// F-17: chunk tables of all segments cannot be held at once beyond the policy cap.
+/// F-17: retained chunk tables (kept for duplicate checks) never exceed the policy cap.
 #[test]
 fn p7_outstanding_table_bytes_are_capped_before_allocation() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -263,7 +263,7 @@ fn p7_outstanding_table_bytes_are_capped_before_allocation() {
         .unwrap();
     let keys = [pk(1)];
     let mut pol = StreamPolicy::new(&keys);
-    pol.max_outstanding_table_bytes = 3 * 32 * 6; // room for exactly 3 tables
+    pol.max_table_bytes = 3 * 32 * 6; // room for exactly 3 tables
     pol.fault_budget = 100;
     let mut v = StreamVerifier::from_descriptor(&b.descriptor, pol).unwrap();
     let tables: Vec<Vec<u8>> = (0..b.entries.len())
@@ -283,10 +283,10 @@ fn p7_outstanding_table_bytes_are_capped_before_allocation() {
         assert_eq!(r.err(), Some(E::StreamLimitExceeded));
         assert_eq!(peak, 0, "a refused table allocated memory");
     }
-    // finishing a segment frees its table budget
+    // finished segments keep their table (duplicate checks), so the budget stays used
     let first = b.segment_frames(&body, 0);
     for f in &first[1..] {
         v.push(f).unwrap();
     }
-    assert!(v.push(&tables[3]).is_ok());
+    assert_eq!(v.push(&tables[3]).err(), Some(E::StreamLimitExceeded));
 }

@@ -227,6 +227,20 @@ fn generate() -> String {
             ]),
         ),
     ]);
+    // Authentic duplicates are idempotent (budget 0: any fault would poison).
+    let len = m2f.frames.len();
+    let s3 = pos(&m2f.frames, 1, 3, Some(0));
+    let late = Edit::Insert {
+        at: len - 1,
+        bytes: m2f.frames[s3].clone(),
+    };
+    let dup_j = variant_json(
+        "duplicate-chunks-and-descriptor",
+        "chunk 0 of segment 3 sent three times, a late replay of it near the end, and the descriptor twice; all idempotent, same released set",
+        &m2f,
+        &[late, Edit::Dup(s3), Edit::Dup(s3), Edit::Dup(0)],
+        &Pol::std(0),
+    );
     J::Obj(vec![
         ("format", s("rvsd-v1-vectors")),
         ("version", n(1u64)),
@@ -280,7 +294,7 @@ fn generate() -> String {
             "other_stream_m2_file_descriptor_hex",
             h(&other.bundle.descriptor),
         ),
-        ("positive_variants", J::Arr(vec![retry_j])),
+        ("positive_variants", J::Arr(vec![retry_j, dup_j])),
         ("negative", J::Arr(neg)),
     ])
     .render()

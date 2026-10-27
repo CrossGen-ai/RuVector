@@ -104,6 +104,7 @@ pub struct Pol {
     pub budget: u32,
     pub pin: Option<EpochPin>,
     pub now: Option<u64>,
+    pub max_dup: Option<u64>,
 }
 impl Pol {
     pub fn std(budget: u32) -> Self {
@@ -112,6 +113,7 @@ impl Pol {
             budget,
             pin: None,
             now: None,
+            max_dup: None,
         }
     }
     pub fn json(&self) -> J {
@@ -135,6 +137,7 @@ impl Pol {
             ("fault_budget", n(self.budget)),
             ("epoch_pin", pin),
             ("now_ns", self.now.map_or(J::Null, J::Num)),
+            ("max_duplicate_frames", self.max_dup.map_or(J::Null, J::Num)),
         ])
     }
 }
@@ -168,6 +171,7 @@ pub fn run(p: &Pol, frames: &[Vec<u8>]) -> Out {
     let mut pol = StreamPolicy::new(&p.trusted);
     pol.fault_budget = p.budget;
     pol.now_ns = p.now;
+    pol.max_duplicate_frames = p.max_dup;
     if p.pin.is_some() {
         pol.epoch_pin = Some(&f);
     }
@@ -191,6 +195,15 @@ pub fn run(p: &Pol, frames: &[Vec<u8>]) -> Out {
                 ("seg_count", n(seg_count)),
                 ("body_len", n(body_len)),
             ]),
+            Ok(Event::Duplicate {
+                seg_id,
+                chunk_index,
+            }) => J::Obj(vec![
+                ("event", s("Duplicate")),
+                ("seg_id", n(seg_id)),
+                ("chunk_index", n(chunk_index)),
+            ]),
+            Ok(Event::DuplicateDescriptor) => J::Obj(vec![("event", s("DuplicateDescriptor"))]),
             Ok(Event::TableVerified { seg_id }) => {
                 J::Obj(vec![("event", s("TableVerified")), ("seg_id", n(seg_id))])
             }
@@ -256,4 +269,48 @@ pub fn mk(name: &'static str, body: &[u8], file_id: [u8; 16], log2: u8, stage: b
         bundle,
         frames,
     }
+}
+
+/// A positive variant: base stream plus edits, expected to end in `Complete`.
+pub fn variant_json(
+    name: &'static str,
+    what: &'static str,
+    base: &Stream,
+    edits: &[Edit],
+    pol: &Pol,
+) -> J {
+    let frames = apply(&base.frames, edits);
+    let o = run(pol, &frames);
+    assert_eq!(o.state, "Complete", "{name}");
+    let first = o.errors.first().copied();
+    J::Obj(vec![
+        ("name", s(name)),
+        ("stream", s(base.name)),
+        ("description", s(what)),
+        ("policy", pol.json()),
+        ("edits", J::Arr(edits.iter().map(edit_json).collect())),
+        ("events", J::Arr(o.events)),
+        (
+            "expect",
+            J::Obj(vec![
+                ("error_count", n(o.errors.len() as u64)),
+                (
+                    "first_error_frame",
+                    first.map_or(J::Null, |(i, _)| n(i as u64)),
+                ),
+                (
+                    "reason",
+                    first.map_or(J::Null, |(_, e)| s(format!("{e:?}"))),
+                ),
+                (
+                    "code",
+                    first.map_or(J::Null, |(_, e)| s(format!("0x{:04x}", e as u16))),
+                ),
+                ("final_state", s(o.state)),
+                ("released_chunks", n(o.chunks)),
+                ("released_bytes", n(o.bytes)),
+                ("complete", J::Bool(true)),
+            ]),
+        ),
+    ])
 }

@@ -17,7 +17,7 @@ All integers in the formats are little-endian; all `*_hex` values are lowercase 
 | `other_body_hex` | Body of the other file (differs only in segment 5). |
 | `stages_by_segment_order` | Stage per segment in body order, used by the `*-stage` streams. |
 | `streams` | Four positive streams: `m1-file`, `m1-stage` (`chunk_log2` 255, one chunk per segment) and `m2-file`, `m2-stage` (`chunk_log2` 12, 4 KiB chunks). `*-stage` streams set `requires_mask` to all lower stages and deliver frames in `(stage, body order)`. |
-| `positive_variants` | Positive cases built by editing a stream (see `edits`). |
+| `positive_variants` | Positive cases built by editing a stream (see `edits`); they carry the per-frame `events` and must end `Complete`. Policy may also set `max_duplicate_frames` (null = default). |
 | `negative` | Cases that must be refused. |
 
 ## Streams
@@ -62,11 +62,12 @@ Each entry in `negative` names a base `stream`, a `policy` (trust set, `fault_bu
 
 ## Rules the vectors rely on (clarifications of ADR-353)
 
-* Frames of a size that contradicts the signed descriptor, a chunk table whose `n` is wrong, and a frame shorter than its own header poison the stream at once (`StreamFrameSizeLie`). Duplicate, out-of-order, unknown-segment, unknown-type and chunk-before-table frames are counted faults (`StreamUnexpectedFrame`); a leaf or table hash mismatch is a counted fault; a chunk whose `requires_mask` stages are not fully verified is a counted fault (`StreamRequirementsUnmet`). The stream is poisoned when the fault count exceeds `fault_budget`. A refused frame never advances the expected chunk.
+* Frames of a size that contradicts the signed descriptor, a chunk table whose `n` is wrong, and a frame shorter than its own header poison the stream at once (`StreamFrameSizeLie`). Future-index, unknown-segment, unknown-type and chunk-before-table frames, and a different descriptor frame after admission, are counted faults (`StreamUnexpectedFrame`); a leaf or table hash mismatch is a counted fault; a chunk whose `requires_mask` stages are not fully verified is a counted fault (`StreamRequirementsUnmet`). The stream is poisoned when the fault count exceeds `fault_budget`. A refused frame never advances the expected chunk.
 * `rvf_identity` must be all zero when `identity_present` is clear. `StreamEntry.flags` must be zero. The root-page pseudo-entry (type 254) must be last, 4096 bytes, `uncompressed_len` 0, and start with the Level-0 root magic bytes `30 4d 56 52`.
-* Complete, CompleteUnverified and Suspended are never turned into Poisoned; further bytes are refused with `StreamBadState`. A pin and chunk-table memory are bounded: tables held at once are capped by `max_outstanding_table_bytes` (default 64 MiB, `StreamLimitExceeded`).
+* Duplicates: a chunk frame with index below the segment's next expected index whose bytes hash to the verified leaf is ignored (event `Duplicate`, nothing released, not a fault); with different bytes it is a leaf-mismatch fault. A byte-identical descriptor frame after admission is ignored (event `DuplicateDescriptor`). Duplicates count against `max_duplicate_frames` (default `4 * total chunks + 64`); exceeding it poisons with `StreamDuplicateFlood` (0x081A). Accepted chunk tables are retained (cap `max_table_bytes`); a second table frame for a segment is still a fault. After `Complete` any frame is refused with `StreamBadState`.
+* Complete, CompleteUnverified and Suspended are never turned into Poisoned; further bytes are refused with `StreamBadState`. A pin and chunk-table memory are bounded: tables held at once are capped by `max_table_bytes` (default 64 MiB, `StreamLimitExceeded`).
 * The running identity SHA-256 is fed only while chunks arrive contiguously in file order. Otherwise `complete` is `Unverifiable` (the consumer may re-read its persisted body and compare).
-* Error codes are `rvf-types` `ErrorCode` values `0x0805..=0x0819` plus the existing `UnknownSigner` 0x0802; see `rvf-types/src/error.rs` (0x0818 is reserved).
+* Error codes are `rvf-types` `ErrorCode` values `0x0805..=0x081A` plus the existing `UnknownSigner` 0x0802; see `rvf-types/src/error.rs` (0x0818 is reserved, 0x081A is `StreamDuplicateFlood`).
 
 ---
 

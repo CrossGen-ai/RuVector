@@ -183,21 +183,12 @@ fn size_lies_poison_immediately() {
 }
 
 #[test]
-fn duplicate_out_of_order_and_unknown_are_counted_faults() {
+fn out_of_order_and_unknown_are_counted_faults() {
     let body = sample_body(1);
     let b = bundle(&body, 12);
     let keys = [pk(1)];
     let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
     let at = first_chunk_frame(&frames, 5, 0);
-    let mut dup = frames.clone();
-    dup.insert(at + 1, frames[at].clone());
-    let r = run_frames(dup, policy(&keys));
-    assert!(r.errors.iter().any(|(_, e)| *e == E::StreamUnexpectedFrame));
-    assert_eq!(r.state, StreamState::Complete); // one counted fault, then the stream proceeds
-    assert_eq!(
-        r.released.len(),
-        run_frames(frames.clone(), policy(&keys)).released.len()
-    );
     let mut ooo = frames.clone();
     ooo.swap(at, at + 1); // chunk 1 before chunk 0
     let r = run_frames(ooo, policy(&keys));
@@ -325,4 +316,134 @@ fn sidecar_descriptor_constructor() {
     }
     assert_eq!(v.state(), StreamState::Complete);
     assert!(StreamVerifier::from_descriptor(&b.descriptor[1..], policy(&keys)).is_err());
+}
+
+fn dup_policy(keys: &[[u8; 32]]) -> StreamPolicy<'_> {
+    let mut p = policy(keys);
+    p.fault_budget = 0; // any counted fault would poison
+    p
+}
+
+#[test]
+fn authentic_duplicates_are_idempotent_and_not_faults() {
+    let body = sample_body(1);
+    let b = bundle(&body, 12);
+    let keys = [pk(1)];
+    let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
+    let clean = run_frames(frames.clone(), dup_policy(&keys));
+    // Every chunk frame sent twice in a row, the descriptor too, and a late replay of the
+    // first chunk of an already finished segment.
+    let mut dup = Vec::new();
+    for (i, f) in frames.iter().enumerate() {
+        dup.push(f.clone());
+        if f[0] != 2 && i + 1 != frames.len() {
+            dup.push(f.clone());
+        }
+    }
+    let first_seg_chunk = first_chunk_frame(&frames, 3, 0);
+    let late = frames[first_seg_chunk].clone();
+    let n = dup.len();
+    dup.insert(n - 2, late);
+    let r = run_frames(dup.clone(), dup_policy(&keys));
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(r.state, StreamState::Complete);
+    assert_eq!(r.released, clean.released, "released set must be identical");
+    // events
+    let mut v = StreamVerifier::new(dup_policy(&keys));
+    let mut dups = 0;
+    for f in &dup {
+        match v.push(f).unwrap() {
+            Event::Duplicate { .. } | Event::DuplicateDescriptor => dups += 1,
+            _ => {}
+        }
+    }
+    assert!(dups > 10);
+    assert_eq!(v.faults(), 0);
+    // after Complete a retransmit is refused without changing the state
+    assert_eq!(
+        v.push(frames.last().unwrap()).err(),
+        Some(E::StreamBadState)
+    );
+    assert_eq!(v.state(), StreamState::Complete);
+}
+
+#[test]
+fn duplicate_with_different_bytes_is_a_hash_mismatch_fault() {
+    let body = sample_body(1);
+    let b = bundle(&body, 12);
+    let keys = [pk(1)];
+    let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
+    let at = first_chunk_frame(&frames, 5, 0);
+    let mut f = frames.clone();
+    let mut bad = frames[at].clone();
+    bad[40] ^= 1;
+    f.insert(at + 1, bad);
+    let r = run_frames(f, dup_policy(&keys));
+    assert_eq!(r.errors[0], (at + 1, E::StreamChunkHashMismatch));
+    assert_eq!(r.state, StreamState::Poisoned(E::StreamChunkHashMismatch));
+    assert_subset(&r, &body);
+}
+
+#[test]
+fn duplicate_flood_is_capped_and_poisons_with_its_own_reason() {
+    let body = sample_body(1);
+    let b = bundle(&body, 12);
+    let keys = [pk(1)];
+    let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
+    let at = first_chunk_frame(&frames, 5, 0);
+    let mut p = dup_policy(&keys);
+    p.max_duplicate_frames = Some(2);
+    let mut f = frames.clone();
+    for _ in 0..3 {
+        f.insert(at + 1, frames[at].clone());
+    }
+    let r = run_frames(f, p);
+    assert_eq!(r.errors[0], (at + 3, E::StreamDuplicateFlood));
+    assert_eq!(r.state, StreamState::Poisoned(E::StreamDuplicateFlood));
+    // default cap is 4 * total chunks + 64
+    let total: u32 = b
+        .entries
+        .iter()
+        .map(|e| b.header.chunk_count(e.stored_len).unwrap())
+        .sum();
+    let mut v = StreamVerifier::new(dup_policy(&keys));
+    v.push(&frames[0]).unwrap();
+    for f in &frames[1..=3] {
+        let _ = v.push(f);
+    }
+    let mut n = 0u64;
+    while v.state() == StreamState::Receiving {
+        let _ = v.push(&frames[0]);
+        n += 1;
+    }
+    assert_eq!(n, 4 * total as u64 + 64 + 1);
+    assert_eq!(v.state(), StreamState::Poisoned(E::StreamDuplicateFlood));
+}
+
+#[test]
+fn future_index_and_different_descriptor_remain_faults() {
+    let body = sample_body(1);
+    let b = bundle(&body, 12);
+    let keys = [pk(1)];
+    let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
+    let c1 = first_chunk_frame(&frames, 5, 1);
+    let mut f = frames.clone();
+    let fut = frames[c1].clone();
+    f.insert(first_chunk_frame(&frames, 5, 0), fut); // chunk 1 before chunk 0
+    let r = run_frames(f, dup_policy(&keys));
+    assert_eq!(r.state, StreamState::Poisoned(E::StreamUnexpectedFrame));
+    let other = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .epoch(9)
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
+    let mut f = frames.clone();
+    f.insert(1, descriptor_frame(&other.descriptor));
+    let r = run_frames(f, dup_policy(&keys));
+    assert_eq!(r.errors[0], (1, E::StreamUnexpectedFrame));
+    let mut f = frames.clone();
+    f.insert(1, frames[0].clone()); // identical descriptor: ignored
+    let r = run_frames(f, dup_policy(&keys));
+    assert!(r.errors.is_empty());
+    assert_eq!(r.state, StreamState::Complete);
 }

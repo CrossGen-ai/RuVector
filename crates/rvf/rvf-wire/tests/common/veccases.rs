@@ -291,9 +291,38 @@ pub fn cases(m1f: &Stream, m1s: &Stream, m2f: &Stream, other: &Stream) -> Vec<Ca
             "Receiving",
         ),
         c(
-            "duplicate-chunk",
-            "chunk 0 delivered twice",
-            vec![Edit::Dup(c0)],
+            "duplicate-with-different-bytes",
+            "authentic chunk 0 followed by a copy with one flipped bit",
+            vec![
+                Edit::Dup(c0),
+                Edit::Xor {
+                    frame: c0 + 1,
+                    offset: 17 + 9,
+                    mask: 4,
+                },
+            ],
+            p0.clone(),
+            E::StreamChunkHashMismatch,
+            "Poisoned:StreamChunkHashMismatch",
+        ),
+        c(
+            "duplicate-flood",
+            "chunk 0 delivered four times with max_duplicate_frames 2",
+            vec![Edit::Dup(c0), Edit::Dup(c0), Edit::Dup(c0)],
+            Pol {
+                max_dup: Some(2),
+                ..p0.clone()
+            },
+            E::StreamDuplicateFlood,
+            "Poisoned:StreamDuplicateFlood",
+        ),
+        c(
+            "descriptor-replayed-different",
+            "a different validly signed descriptor (epoch 8) sent after admission",
+            vec![Edit::Insert {
+                at: 1,
+                bytes: descriptor_frame(&resign(bundle, &sk, |_, h| h.epoch = 8)),
+            }],
             p0.clone(),
             E::StreamUnexpectedFrame,
             "Poisoned:StreamUnexpectedFrame",
