@@ -213,7 +213,7 @@ impl TcpTransport {
         let mut h = [0u8; 8];
         s.read_exact(&mut h)?;
         let len = u32::from_be_bytes([h[0], h[1], h[2], h[3]]) as usize;
-        if h[4] != 0x85 || len < 8 || len > 32 * 1024 * 1024 {
+        if h[4] != 0x85 || !(8..=32 * 1024 * 1024).contains(&len) {
             return Err(lie("bad stream reply"));
         }
         let mut body = vec![0u8; len];

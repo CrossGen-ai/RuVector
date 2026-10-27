@@ -75,8 +75,8 @@ impl StreamDataset {
         for i in 0..n {
             let c = i * clusters / n;
             cluster_of.push(c as u32);
-            for d in 0..dim {
-                data.push(centers[c][d] + sigma * gauss(&mut s));
+            for &centre in &centers[c] {
+                data.push(centre + sigma * gauss(&mut s));
             }
         }
         Self {

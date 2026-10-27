@@ -349,6 +349,43 @@ async fn handle_status(store: &SharedStore) -> Result<(u8, Vec<u8>), TcpError> {
     Ok((MSG_STATUS_RESP, resp))
 }
 
+/// `0x05` stream request: kind 0 = descriptor, kind 1 = frame-stream bytes
+/// `[offset, offset + min(max_len, tcp_max_response))`. The reply payload is
+/// the total stream length (u64 BE) followed by the bytes.
+fn handle_stream(payload: &[u8], srv: &StreamServer) -> Result<(u8, Vec<u8>), TcpError> {
+    let bad = |m: &str| TcpError {
+        code: 0x0104,
+        message: m.into(),
+    };
+    if payload.len() != 13 {
+        return Err(bad("stream request must be 13 bytes"));
+    }
+    let _permit = srv.try_permit().ok_or_else(|| TcpError {
+        code: 0x0108,
+        message: "too many concurrent streams".into(),
+    })?;
+    let offset = u64::from_be_bytes(payload[1..9].try_into().expect("8"));
+    let max_len = u32::from_be_bytes(payload[9..13].try_into().expect("4"));
+    let total = srv.stream_len();
+    let mut out = Vec::new();
+    match payload[0] {
+        0 => {
+            out.extend_from_slice(&total.to_be_bytes());
+            out.extend_from_slice(srv.descriptor());
+        }
+        1 => {
+            if offset >= total {
+                return Err(bad("offset beyond end of stream"));
+            }
+            let len = (max_len.min(srv.config().tcp_max_response)) as u64;
+            out.extend_from_slice(&total.to_be_bytes());
+            out.extend_from_slice(&srv.read_range(offset, offset.saturating_add(len)));
+        }
+        _ => return Err(bad("unknown stream request kind")),
+    }
+    Ok((MSG_STREAM_RESP, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,41 +511,4 @@ mod tests {
         let id = u64::from_le_bytes(payload[4..12].try_into().unwrap());
         assert_eq!(id, 1);
     }
-}
-
-/// `0x05` stream request: kind 0 = descriptor, kind 1 = frame-stream bytes
-/// `[offset, offset + min(max_len, tcp_max_response))`. The reply payload is
-/// the total stream length (u64 BE) followed by the bytes.
-fn handle_stream(payload: &[u8], srv: &StreamServer) -> Result<(u8, Vec<u8>), TcpError> {
-    let bad = |m: &str| TcpError {
-        code: 0x0104,
-        message: m.into(),
-    };
-    if payload.len() != 13 {
-        return Err(bad("stream request must be 13 bytes"));
-    }
-    let _permit = srv.try_permit().ok_or_else(|| TcpError {
-        code: 0x0108,
-        message: "too many concurrent streams".into(),
-    })?;
-    let offset = u64::from_be_bytes(payload[1..9].try_into().expect("8"));
-    let max_len = u32::from_be_bytes(payload[9..13].try_into().expect("4"));
-    let total = srv.stream_len();
-    let mut out = Vec::new();
-    match payload[0] {
-        0 => {
-            out.extend_from_slice(&total.to_be_bytes());
-            out.extend_from_slice(srv.descriptor());
-        }
-        1 => {
-            if offset >= total {
-                return Err(bad("offset beyond end of stream"));
-            }
-            let len = (max_len.min(srv.config().tcp_max_response)) as u64;
-            out.extend_from_slice(&total.to_be_bytes());
-            out.extend_from_slice(&srv.read_range(offset, offset.saturating_add(len)));
-        }
-        _ => return Err(bad("unknown stream request kind")),
-    }
-    Ok((MSG_STREAM_RESP, out))
 }
