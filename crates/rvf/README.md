@@ -123,19 +123,19 @@ The same `.rvf` file runs on servers, browsers (WASM), edge devices, TEE enclave
 
 | Crate | Version | Description |
 |-------|---------|-------------|
-| [`rvf-types`](https://crates.io/crates/rvf-types) | 0.2.1 | Segment types, 24 headers, quality, security, AGI container types (`no_std`) |
-| [`rvf-wire`](https://crates.io/crates/rvf-wire) | 0.1.0 | Wire format read/write (`no_std`) |
+| [`rvf-types`](https://crates.io/crates/rvf-types) | 0.2.3 | Segment types, 24 headers, quality, security, AGI container types (`no_std`) |
+| [`rvf-wire`](https://crates.io/crates/rvf-wire) | 0.1.2 | Wire format read/write (`no_std`) |
 | [`rvf-manifest`](https://crates.io/crates/rvf-manifest) | 0.1.0 | Two-level manifest, FileIdentity, COW pointers |
 | [`rvf-quant`](https://crates.io/crates/rvf-quant) | 0.2.0 | Scalar, product, binary, and RaBitQ quantization |
-| [`rvf-index`](https://crates.io/crates/rvf-index) | 0.2.0 | HNSW progressive indexing (Layer A/B/C), Vamana alpha-pruning |
-| [`rvf-crypto`](https://crates.io/crates/rvf-crypto) | 0.2.0 | SHAKE-256, Ed25519, witness chains, seed crypto |
-| [`rvf-runtime`](https://crates.io/crates/rvf-runtime) | 0.3.0 | Full store API, HNSW-backed queries, COW engine, AGI containers, QR seeds, safety net |
+| [`rvf-index`](https://crates.io/crates/rvf-index) | 0.2.1 | HNSW progressive indexing (Layer A/B/C), Vamana alpha-pruning |
+| [`rvf-crypto`](https://crates.io/crates/rvf-crypto) | 0.2.1 | SHAKE-256, Ed25519, witness chains, seed crypto, stream descriptor signing |
+| [`rvf-runtime`](https://crates.io/crates/rvf-runtime) | **0.4.0** | Full store API, HNSW-backed queries, COW engine, AGI containers, QR seeds, safety net; verified streaming ingest, Strict policy. **File format break: 0.4.0 files are not readable by 0.3.x** |
 | [`rvf-kernel`](https://crates.io/crates/rvf-kernel) | 0.1.0 | Linux kernel builder, initramfs, Docker pipeline |
 | [`rvf-ebpf`](https://crates.io/crates/rvf-ebpf) | 0.1.0 | BPF C compiler (XDP, socket filter, TC) |
-| [`rvf-launch`](https://crates.io/crates/rvf-launch) | 0.1.0 | QEMU microvm launcher, KVM/TCG, QMP |
-| [`rvf-server`](https://crates.io/crates/rvf-server) | 0.1.0 | HTTP REST + TCP streaming server |
-| [`rvf-import`](https://crates.io/crates/rvf-import) | 0.1.0 | JSON, CSV, NumPy importers |
-| [`rvf-cli`](https://crates.io/crates/rvf-cli) | 0.1.0 | Unified CLI with 17 subcommands |
+| [`rvf-launch`](https://crates.io/crates/rvf-launch) | 0.2.0 | QEMU microvm launcher, KVM/TCG, QMP |
+| [`rvf-server`](https://crates.io/crates/rvf-server) | 0.2.0 | HTTP REST + TCP server; verified stream endpoints (`/v1/stream/*`, TCP 0x05/0x85) |
+| [`rvf-import`](https://crates.io/crates/rvf-import) | 0.2.0 | JSON, CSV, NumPy importers |
+| [`rvf-cli`](https://crates.io/crates/rvf-cli) | 0.2.0 | Unified CLI with 17 subcommands |
 | [`rvf-solver-wasm`](https://crates.io/crates/rvf-solver-wasm) | 0.1.0 | Thompson Sampling temporal solver (WASM, `no_std`) |
 
 ### npm Packages (npmjs.org)
@@ -146,6 +146,8 @@ The same `.rvf` file runs on servers, browsers (WASM), edge devices, TEE enclave
 | [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node) | 0.1.7 | Node.js N-API native bindings |
 | [`@ruvector/rvf-wasm`](https://www.npmjs.com/package/@ruvector/rvf-wasm) | 0.1.7 | WASM browser package |
 | [`@ruvector/rvf-mcp-server`](https://www.npmjs.com/package/@ruvector/rvf-mcp-server) | 0.1.0 | MCP server for AI agents |
+
+> The npm versions above predate Ofer. `@ruvector/rvf-node` still ships native binaries built on the 0.3.x runtime (files written by `rvf-runtime` 0.4.0 are not readable by it), so it needs a multi-platform rebuild and a new release; that has not been done.
 
 ### Platform Support
 
