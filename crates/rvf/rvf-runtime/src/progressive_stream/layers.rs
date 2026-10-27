@@ -21,6 +21,19 @@ pub const MAGIC_A: [u8; 4] = *b"RVPA";
 /// Layer B payload magic.
 pub const MAGIC_B: [u8; 4] = *b"RVPB";
 
+/// Most partitions a Layer A may carry.
+pub const MAX_PARTITIONS: usize = 65_536;
+
+/// True if the partitions are well formed, sorted by `vector_id_start` and
+/// pairwise disjoint. The producer (`build`) emits maps that satisfy this by
+/// construction when ids are assigned cluster by cluster.
+pub fn partitions_disjoint(parts: &[PartitionEntry]) -> bool {
+    parts.iter().all(|p| p.vector_id_end >= p.vector_id_start)
+        && parts
+            .windows(2)
+            .all(|w| w[0].vector_id_end <= w[1].vector_id_start)
+}
+
 /// A decoded Layer A with its anchor vectors.
 pub struct DecodedA {
     /// The routing layer.
@@ -183,6 +196,10 @@ pub fn decode_a(b: &[u8]) -> Option<DecodedA> {
         centroids.push(floats(&mut c, dim)?);
     }
     let np = c.count(20)?;
+    // Partition maps are routing metadata, not data: cap them (F3-01).
+    if np > MAX_PARTITIONS {
+        return None;
+    }
     c.charge(np * std::mem::size_of::<PartitionEntry>())?;
     let mut partition_map = Vec::with_capacity(np);
     for _ in 0..np {
@@ -193,6 +210,12 @@ pub fn decode_a(b: &[u8]) -> Option<DecodedA> {
             segment_ref: 0,
             block_ref: 0,
         });
+    }
+    // Partitions must be sorted by start and pairwise disjoint (zero-width is
+    // fine), so one query visits any id at most once per matching partition
+    // and the number of partitions bounds nothing but the map itself.
+    if !partitions_disjoint(&partition_map) {
+        return None;
     }
     let na = c.count(8 + dim * 4)?;
     c.charge(na * (8 + 24 + 4 * dim))?;

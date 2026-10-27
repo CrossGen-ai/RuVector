@@ -31,6 +31,59 @@ pub enum QueryMode {
     ScanOnly,
 }
 
+/// Counts the work a layer search does and stops serving lookups once a budget
+/// is spent (deterministic, in steps — not time). A hostile or merely huge
+/// Layer A can then degrade one answer but not stall the client.
+struct BudgetedStore<'a> {
+    inner: &'a VerifiedVectors,
+    steps: std::cell::Cell<u64>,
+    limit: u64,
+    exhausted: std::cell::Cell<bool>,
+}
+
+impl BudgetedStore<'_> {
+    fn spend(&self, n: u64) -> bool {
+        let used = self.steps.get().saturating_add(n);
+        if used > self.limit {
+            self.exhausted.set(true);
+            return false;
+        }
+        self.steps.set(used);
+        true
+    }
+}
+
+impl rvf_index::VectorStore for BudgetedStore<'_> {
+    fn get_vector(&self, id: u64) -> Option<&[f32]> {
+        if !self.spend(1) {
+            return None;
+        }
+        self.inner.get_vector(id)
+    }
+
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+
+    fn for_each_in_range(&self, start: u64, end: u64, f: &mut dyn FnMut(u64, &[f32])) {
+        if end <= start {
+            return;
+        }
+        // A range costs at most one pass over the present ids.
+        let cost = ((end - start) as u128).min(self.inner.len() as u128) as u64;
+        if !self.spend(cost.max(1)) {
+            return;
+        }
+        self.inner.for_each_in_range(start, end, f);
+    }
+}
+
+/// Steps one layer search may spend: generous for honest layers (a search
+/// touches a few thousand ids) and a hard ceiling for hostile ones.
+fn default_work_budget(visible: usize) -> u64 {
+    1_000_000 + 16 * visible as u64
+}
+
 /// Rows timed when calibrating the scan cost.
 const CALIBRATION_ROWS: usize = 2048;
 
@@ -55,6 +108,11 @@ impl<'p> StreamIngest<'p> {
             self.scan_ns_per_vec.set(ns);
         }
         (self.scan_bound.as_nanos() as f64 / ns) as usize
+    }
+
+    /// Override the per-query work budget (steps) of the layer search.
+    pub fn set_query_work_budget(&mut self, steps: Option<u64>) {
+        self.work_budget = steps;
     }
 
     /// k-NN over what is verified so far, using [`QueryMode::Auto`].
@@ -84,6 +142,8 @@ impl<'p> StreamIngest<'p> {
                     !layers.layer_c && (!can_layers || visible <= self.scan_threshold(q))
                 }
             };
+        let mut truncated = false;
+        let mut work_steps = 0u64;
         let (mut hits, path) = if scan {
             let t = Instant::now();
             let h = self
@@ -98,9 +158,17 @@ impl<'p> StreamIngest<'p> {
             });
             (h, QueryPath::ArrivedScan)
         } else if can_layers {
-            let h = self
-                .index
-                .search(q, k + self.deleted.len().min(k), ef, &self.vectors);
+            let b = BudgetedStore {
+                inner: &self.vectors,
+                steps: std::cell::Cell::new(0),
+                limit: self
+                    .work_budget
+                    .unwrap_or_else(|| default_work_budget(visible)),
+                exhausted: std::cell::Cell::new(false),
+            };
+            let h = self.index.search(q, k + self.deleted.len().min(k), ef, &b);
+            truncated = b.exhausted.get();
+            work_steps = b.steps.get();
             (h, QueryPath::Layers)
         } else {
             (Vec::new(), QueryPath::Empty)
@@ -116,19 +184,33 @@ impl<'p> StreamIngest<'p> {
         let full = sealed && layers.layer_c && path == QueryPath::Layers;
         let quality = if hits.is_empty() {
             ResponseQuality::Unreliable
+        } else if truncated {
+            ResponseQuality::Degraded
         } else if full {
             ResponseQuality::Verified
         } else {
             ResponseQuality::Usable
         };
-        let degradation = (!full).then_some(DegradationReport {
-            fallback_path: if path == QueryPath::ArrivedScan {
+        let degradation = (!full || truncated).then_some(DegradationReport {
+            fallback_path: if truncated {
+                FallbackPath::SafetyNetBudgetExhausted
+            } else if path == QueryPath::ArrivedScan {
                 FallbackPath::SafetyNetSelective
             } else {
                 FallbackPath::None
             },
-            reason: DegradationReason::IndexNotLoaded { available: layers },
-            guarantee_lost: if path == QueryPath::ArrivedScan {
+            reason: if truncated {
+                DegradationReason::BudgetExhausted {
+                    scanned: work_steps,
+                    total: self.work_budget.unwrap_or_else(|| default_work_budget(visible)),
+                    budget_type: rvf_types::quality::BudgetType::DistanceOps,
+                }
+            } else {
+                DegradationReason::IndexNotLoaded { available: layers }
+            },
+            guarantee_lost: if truncated {
+                "the layer search hit its work budget; results are partial"
+            } else if path == QueryPath::ArrivedScan {
                 "exact over the verified vectors received so far only (see coverage_vectors); not sealed"
             } else {
                 "index layers and vectors still arriving; not sealed"
@@ -190,6 +272,8 @@ impl<'p> StreamIngest<'p> {
             path,
             coverage_vectors,
             coverage_bytes,
+            work_truncated: truncated,
+            work_steps,
         }
     }
 }

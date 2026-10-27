@@ -53,10 +53,18 @@ pub async fn serve_tcp_with_stream(
     let listener = TcpListener::bind(addr).await?;
 
     loop {
-        let (stream, _peer) = listener.accept().await?;
+        let (stream, peer) = listener.accept().await?;
         let store = Arc::clone(&store);
         let stream_srv = stream_cfg.clone();
+        let slot = match &stream_srv {
+            Some(s) => match s.try_tcp_client(peer.ip()) {
+                Some(g) => Some(g),
+                None => continue, // per-client cap: drop the connection
+            },
+            None => None,
+        };
         tokio::spawn(async move {
+            let _slot = slot;
             if let Err(e) = handle_connection(stream, store, stream_srv).await {
                 eprintln!("tcp connection error: {e}");
             }

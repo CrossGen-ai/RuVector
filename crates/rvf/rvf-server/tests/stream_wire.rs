@@ -61,8 +61,8 @@ fn descriptor_and_range_semantics_and_abuse_limits() {
 
     // Concurrent-stream limit (max 1): with the only permit taken, a body
     // request is refused; once released it is served.
-    let permit = r.server.try_permit().expect("one permit");
-    assert!(r.server.try_permit().is_none());
+    let permit = r.server.try_permit(None).expect("one permit");
+    assert!(r.server.try_permit(None).is_none());
     let (st, _, _) = raw_get(r.http, "/v1/stream/body", Some("bytes=0-9"));
     assert_eq!(st, 429);
     // The descriptor endpoint is not a stream and is unaffected.

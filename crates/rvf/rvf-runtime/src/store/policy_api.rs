@@ -53,7 +53,9 @@ impl RvfStore {
         if policy == SecurityPolicy::Permissive {
             return Self::open(path);
         }
-        let state = SecurityState::with(policy, options.trusted_signers.clone(), None);
+        let mut state = SecurityState::with(policy, options.trusted_signers.clone(), None);
+        state.min_epoch = options.min_epoch;
+        state.serve_signed_prefix = options.serve_signed_prefix;
         Self::open_readonly_inner(path, &mut HashSet::new(), state)
     }
 
@@ -75,8 +77,10 @@ impl RvfStore {
         if !cfg!(feature = "ed25519") || !policy.requires_signature() {
             return Err(err(ErrorCode::InvalidSignature));
         }
-        let state =
+        let mut state =
             SecurityState::with(policy, options.trusted_signers.clone(), Some(*signing_key));
+        state.min_epoch = options.min_epoch;
+        state.serve_signed_prefix = options.serve_signed_prefix;
         Self::open_inner(path, state)
     }
 
@@ -95,6 +99,14 @@ impl RvfStore {
     /// artifact it is not verifying.
     pub fn has_signed_root_page(&self) -> bool {
         self.security.root_page_present.load(Ordering::Acquire)
+    }
+
+    /// Under a signature-checking policy opened with
+    /// `RvfOptions::serve_signed_prefix`: the newest parseable manifest found
+    /// beyond the signed page, `(offset, epoch)`. It was NOT used; the store
+    /// serves the signed state. `None` when there is no such manifest.
+    pub fn newer_manifest_ignored(&self) -> Option<(u64, u32)> {
+        self.security.newer_ignored
     }
 
     /// The policy this store was opened under.
@@ -231,6 +243,30 @@ impl RvfStore {
             self.security
                 .root_page_present
                 .store(true, Ordering::Release);
+            if policy.requires_signature() {
+                // A signed page proves authenticity, not freshness (F3-02).
+                if located.manifest.epoch < self.security.min_epoch {
+                    return Err(err(ErrorCode::StreamStaleEpoch));
+                }
+                if let Some((off, epoch)) = located.newer_ignored {
+                    if !self.security.serve_signed_prefix {
+                        // An unsigned tail: interrupted commit, planted manifest or
+                        // a page swapped back over newer data. Refuse unless the
+                        // caller opted in to serving the signed prefix.
+                        return Err(RvfError::Security(SecurityError::ContentHashMismatch {
+                            pointer_name: "newer_manifest_beyond_signed_page",
+                            expected_hash: compute_shake256_128(&located.payload),
+                            actual_hash: [0; 16],
+                            seg_offset: off,
+                        }));
+                    }
+                    log::warn!(
+                        "rvf: serving the signed state (epoch {}) although a newer manifest (epoch {epoch}) follows the signed page at 0x{off:X}",
+                        located.manifest.epoch
+                    );
+                    self.security.newer_ignored = Some((off, epoch));
+                }
+            }
         }
 
         if let Some(entries) = &manifest.seg_hashes {

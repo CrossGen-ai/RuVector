@@ -77,6 +77,12 @@ impl PinStore for MemoryPinStore {
     ) -> Result<(), PinConflict> {
         let mut m = self.pins.lock().unwrap_or_else(|e| e.into_inner());
         let cur = m.get(&(*signer, *file_id)).copied();
+        // Re-recording the identical pin is a no-op success even when this
+        // session was admitted against an older view (concurrent sessions of
+        // one descriptor, F3-03).
+        if cur == Some(new) {
+            return Ok(());
+        }
         if cur != expected_current {
             return Err(PinConflict { current: cur });
         }

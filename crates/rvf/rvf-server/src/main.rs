@@ -51,6 +51,14 @@ struct Cli {
     /// Largest response for one Range request, in bytes
     #[arg(long, default_value_t = 268_435_456)]
     stream_max_range: u64,
+
+    /// Minimum client read rate (bytes/s) enforced per rate window
+    #[arg(long, default_value_t = 32_768)]
+    stream_min_rate: u64,
+
+    /// Streams one client address may hold at once
+    #[arg(long, default_value_t = 4)]
+    stream_max_per_client: usize,
 }
 
 #[tokio::main]
@@ -71,6 +79,8 @@ async fn main() {
             c.epoch = cli.stream_epoch;
             c.max_concurrent_streams = cli.stream_max_streams;
             c.max_range_bytes = cli.stream_max_range;
+            c.min_rate_bytes_per_sec = cli.stream_min_rate;
+            c.max_streams_per_client = cli.stream_max_per_client;
             Some(c)
         }
         _ => None,

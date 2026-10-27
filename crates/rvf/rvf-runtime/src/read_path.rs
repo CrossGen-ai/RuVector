@@ -60,6 +60,9 @@ pub(crate) struct LocatedManifest {
     pub payload: Vec<u8>,
     /// Scan mode that found it. `ByteGranular` means legacy dialect.
     pub mode: ScanMode,
+    /// Under a signed page: the newest parseable manifest beyond the
+    /// page-named one `(offset, epoch)`, which was NOT used.
+    pub newer_ignored: Option<(u64, u32)>,
 }
 
 /// Work done by one manifest scan. Exposed for the DoS regression test, which
@@ -208,7 +211,17 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
     // directly. Newer lookalikes (crash leftovers, planted headers) are not
     // consulted at all, so they cannot hide it or replace it (F2-07).
     if let Some(o) = hint.expect_offset {
-        if let Some(m) = manifest_at(reader, o, file_size, end, stats)? {
+        if let Some(mut m) = manifest_at(reader, o, file_size, end, stats)? {
+            // Look (within the usual budgets) for a parseable manifest NEWER
+            // than the signed one, so it can be reported instead of silently
+            // ignored (F3-02).
+            let mode = mode_for_file(reader, file_size)?;
+            let newer_hint = ScanHint {
+                expect_offset: Some(o + 1),
+            };
+            if let (Some(n), _, _) = scan_blocks(reader, file_size, end, mode, newer_hint, stats)? {
+                m.newer_ignored = Some((n.offset, n.manifest.epoch));
+            }
             return Ok(Some(m));
         }
     }
@@ -260,6 +273,7 @@ fn manifest_at<R: Read + Seek>(
             header,
             payload,
             mode: ScanMode::Aligned,
+            newer_ignored: None,
         }),
     )
 }
@@ -351,6 +365,7 @@ fn scan_blocks<R: Read + Seek>(
                         header,
                         payload,
                         mode,
+                        newer_ignored: None,
                     }),
                     saw,
                     false,

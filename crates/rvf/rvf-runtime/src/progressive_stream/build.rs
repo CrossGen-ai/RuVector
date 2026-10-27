@@ -200,7 +200,13 @@ pub fn build_stream_store(
     let (graph, _) =
         decode_graph(&payload).ok_or(RvfError::Code(rvf_types::ErrorCode::InvalidManifest))?;
     let assignments: Vec<u32> = ds.cluster_of.clone();
-    let layer_a = build_layer_a(&graph, &ds.centroids(), &assignments, n as u64);
+    let mut layer_a = build_layer_a(&graph, &ds.centroids(), &assignments, n as u64);
+    // The wire format requires sorted, disjoint partitions: ids must be
+    // assigned cluster by cluster (`StreamDataset::clustered` does).
+    layer_a.partition_map.sort_by_key(|p| p.vector_id_start);
+    if !super::layers::partitions_disjoint(&layer_a.partition_map) {
+        return Err(RvfError::Code(rvf_types::ErrorCode::InvalidManifest));
+    }
     let mut anchor_ids: BTreeSet<u64> = BTreeSet::new();
     for (id, _) in &layer_a.entry_points {
         anchor_ids.insert(*id);

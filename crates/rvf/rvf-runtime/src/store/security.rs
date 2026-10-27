@@ -96,6 +96,11 @@ pub(super) struct SecurityState {
     /// Explicit consent for a handle that cannot re-sign to cut a valid
     /// signed root page by writing (F-12). Default false.
     pub allow_unsigning: bool,
+    /// Freshness pin and prefix opt-in from `RvfOptions` (F3-02).
+    pub min_epoch: u32,
+    pub serve_signed_prefix: bool,
+    /// Newest parseable manifest found beyond the signed page, if any.
+    pub newer_ignored: Option<(u64, u32)>,
 }
 
 impl SecurityState {
@@ -110,6 +115,9 @@ impl SecurityState {
             legacy_dialect: AtomicBool::new(false),
             last_manifest: None,
             allow_unsigning: false,
+            min_epoch: 0,
+            serve_signed_prefix: false,
+            newer_ignored: None,
         }
     }
 

@@ -97,6 +97,10 @@ pub struct StreamAnswer {
     pub coverage_vectors: f64,
     /// Verified bytes as a fraction of the stream body.
     pub coverage_bytes: f64,
+    /// The layer search stopped at its work budget: results are partial.
+    pub work_truncated: bool,
+    /// Steps the layer search spent (0 for the scan path).
+    pub work_steps: u64,
 }
 
 /// How a query was answered.
@@ -130,6 +134,7 @@ pub struct StreamIngest<'p> {
     unpublished: bool,
     dropped_witnesses: u64,
     vec_stored_bytes: u64,
+    work_budget: Option<u64>,
     scan_bound: std::time::Duration,
     scan_ns_per_vec: std::cell::Cell<f64>,
     buffered: u64,
@@ -154,6 +159,7 @@ impl<'p> StreamIngest<'p> {
             unpublished: false,
             dropped_witnesses: 0,
             vec_stored_bytes: 0,
+            work_budget: None,
             scan_bound: std::time::Duration::from_millis(25),
             scan_ns_per_vec: std::cell::Cell::new(0.0),
             buffered: 0,

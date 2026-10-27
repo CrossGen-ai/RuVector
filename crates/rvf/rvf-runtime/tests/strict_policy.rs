@@ -233,7 +233,7 @@ fn forged_fingerprint_claiming_the_trusted_signer_is_invalid_signature() {
 }
 
 #[test]
-fn planted_newer_manifest_under_a_signed_page_is_ignored() {
+fn planted_newer_manifest_beyond_a_signed_page_is_refused_unless_the_prefix_is_opted_in() {
     // Attacker keeps the genuine page (valid signature!) but plants a newer
     // manifest segment in front of it. The tail scan finds the plant; the
     // signed page commits to a different offset and hash.
@@ -265,13 +265,36 @@ fn planted_newer_manifest_under_a_signed_page_is_ignored() {
     out.extend_from_slice(page.unwrap());
     std::fs::write(&p, &out).unwrap();
 
-    // F2-07: under a signed page the page-named manifest is read directly, so
-    // a newer planted lookalike neither replaces nor hides it: the signed state
-    // is served (all 12 vectors), the plant is never consulted.
-    let _ = planted_off;
-    let s =
-        RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict).unwrap();
+    // A newer parseable manifest beyond the signed page is an unsigned tail:
+    // Strict refuses by default (F3-02) ...
+    let e = security(open_err(&p, &[public(&SECRET)], SecurityPolicy::Strict));
+    assert!(
+        matches!(&e, SecurityError::ContentHashMismatch { pointer_name: "newer_manifest_beyond_signed_page", seg_offset, .. } if *seg_offset == planted_off as u64),
+        "{e:?}"
+    );
+    // ... and serves the signed prefix only when the caller opts in; the
+    // ignored manifest is reported, never used (F2-07: it also cannot hide
+    // or replace the signed one).
+    let mut o = opts(&[public(&SECRET)]);
+    o.serve_signed_prefix = true;
+    let s = RvfStore::open_with_policy(&p, o, SecurityPolicy::Strict).unwrap();
     assert_eq!(s.status().total_vectors, 12);
+    assert_eq!(
+        s.newer_manifest_ignored().map(|x| x.0),
+        Some(planted_off as u64)
+    );
+
+    // Freshness pin: a caller that last accepted a newer epoch refuses this
+    // state outright (the file's own manifest epoch is the monotone counter).
+    let mut o = opts(&[public(&SECRET)]);
+    o.serve_signed_prefix = true;
+    o.min_epoch = u32::MAX;
+    assert!(matches!(
+        RvfStore::open_with_policy(&p, o, SecurityPolicy::Strict),
+        Err(rvf_types::RvfError::Code(
+            rvf_types::ErrorCode::StreamStaleEpoch
+        ))
+    ));
 }
 
 #[test]
@@ -302,4 +325,25 @@ fn rewritten_manifest_under_an_intact_page_is_refused() {
         ),
         "{e:?}"
     );
+}
+
+#[test]
+fn freshness_pin_accepts_the_pinned_epoch_and_refuses_older_state() {
+    let d = tempfile::tempdir().unwrap();
+    let p = signed_store(d.path());
+    let epoch = RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict)
+        .unwrap()
+        .epoch();
+    let mut o = opts(&[public(&SECRET)]);
+    o.min_epoch = epoch;
+    assert!(RvfStore::open_with_policy(&p, o.clone(), SecurityPolicy::Strict).is_ok());
+    o.min_epoch = epoch + 1;
+    for pol in [SecurityPolicy::Strict, SecurityPolicy::Paranoid] {
+        assert!(matches!(
+            RvfStore::open_with_policy(&p, o.clone(), pol),
+            Err(rvf_types::RvfError::Code(
+                rvf_types::ErrorCode::StreamStaleEpoch
+            ))
+        ));
+    }
 }

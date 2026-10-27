@@ -106,6 +106,40 @@ impl<'a> StreamPolicy<'a> {
         }
     }
 
+    /// Preset for internet-facing clients (F3-06): 16 GiB body, 256 MiB
+    /// segments, 4096 segments, 256 KiB descriptor, and a retained-table cap
+    /// derived from the body limit (128 MiB worst case; tables are freed as
+    /// their segments verify, so typical use holds only open segments).
+    pub fn conservative(trusted_keys: &'a [[u8; 32]]) -> Self {
+        let body = 16u64 << 30;
+        Self {
+            max_descriptor_bytes: 256 << 10,
+            max_segments: 4096,
+            max_body_len: body,
+            max_segment_bytes: 256 << 20,
+            max_uncompressed_len: 1 << 30,
+            max_class_bytes: [body; StreamClass::COUNT],
+            max_table_bytes: body / 4096 * 32,
+            ..Self::new(trusted_keys)
+        }
+    }
+
+    /// Preset for small devices (F3-06): 256 MiB body, 16 MiB segments, 1024
+    /// segments, 64 KiB descriptor, 2 MiB retained-table cap.
+    pub fn embedded(trusted_keys: &'a [[u8; 32]]) -> Self {
+        let body = 256u64 << 20;
+        Self {
+            max_descriptor_bytes: 64 << 10,
+            max_segments: 1024,
+            max_body_len: body,
+            max_segment_bytes: 16 << 20,
+            max_uncompressed_len: 64 << 20,
+            max_class_bytes: [body; StreamClass::COUNT],
+            max_table_bytes: body / 4096 * 32,
+            ..Self::new(trusted_keys)
+        }
+    }
+
     /// Upper bound on bytes allocated while decoding a descriptor: the
     /// signed-message copy plus the entry vector plus the id scratch vector.
     pub fn descriptor_alloc_bound(&self) -> usize {

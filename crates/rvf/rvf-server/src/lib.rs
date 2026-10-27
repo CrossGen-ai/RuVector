@@ -96,7 +96,7 @@ pub async fn run_with_stream(
     eprintln!("rvf-server TCP  listening on {tcp_addr}");
 
     tokio::select! {
-        result = axum::serve(listener, app) => {
+        result = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()) => {
             result?;
         }
         result = tcp::serve_tcp_with_stream(&tcp_addr, store, stream_srv) => {

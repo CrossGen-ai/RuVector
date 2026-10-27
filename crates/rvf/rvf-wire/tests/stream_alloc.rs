@@ -283,10 +283,69 @@ fn p7_outstanding_table_bytes_are_capped_before_allocation() {
         assert_eq!(r.err(), Some(E::StreamLimitExceeded));
         assert_eq!(peak, 0, "a refused table allocated memory");
     }
-    // finished segments keep their table (duplicate checks), so the budget stays used
+    // A finished segment's table is freed (F3-06): the retained bound is about
+    // OPEN segments, so completing segment 0 makes room for exactly one more.
     let first = b.segment_frames(&body, 0);
     for f in &first[1..] {
         v.push(f).unwrap();
     }
-    assert_eq!(v.push(&tables[3]).err(), Some(E::StreamLimitExceeded));
+    assert!(
+        v.push(&tables[3]).is_ok(),
+        "room freed by the finished segment"
+    );
+    assert_eq!(v.push(&tables[4]).err(), Some(E::StreamLimitExceeded));
+}
+
+/// F3-06: tables are freed when their segment verifies, so streaming many
+/// multi-chunk segments in sequence retains about one table, not all of them.
+#[test]
+fn p7_finished_segment_tables_are_freed() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    use rvf_types::SegmentFlags as F;
+    let mut body = Vec::new();
+    for i in 0..16u64 {
+        // 1 MiB payload, 4 KiB chunks: 256 chunks, an 8 KiB table per segment
+        body.extend(rvf_wire::writer::write_segment(
+            0x01,
+            &vec![i as u8; 1 << 20],
+            F::empty(),
+            i + 1,
+        ));
+    }
+    let b = StreamDescriptorBuilder::new(FILE_ID, key(1))
+        .chunk_log2(12)
+        .build(&body)
+        .unwrap();
+    let keys = [pk(1)];
+    let mut v = StreamVerifier::new(StreamPolicy::new(&keys));
+    let frames: Vec<Vec<u8>> = b.frames_file_order(&body).collect();
+    v.push(&frames[0]).unwrap();
+    let (_, peak) = peak_of(|| {
+        for f in &frames[1..] {
+            v.push(f).unwrap();
+        }
+    });
+    assert_eq!(v.state(), StreamState::Complete);
+    // Retaining every table would hold 16 x 8 KiB = 128 KiB; one open table is 8 KiB.
+    assert!(
+        peak < 64 * 1024,
+        "peak {peak} B: finished tables were retained"
+    );
+}
+
+/// F3-06: the presets are strictly tighter than the defaults and keep the
+/// derived table cap.
+#[test]
+fn presets_are_tighter_than_default() {
+    let keys = [pk(1)];
+    let d = StreamPolicy::new(&keys);
+    for p in [
+        StreamPolicy::conservative(&keys),
+        StreamPolicy::embedded(&keys),
+    ] {
+        assert!(p.max_body_len < d.max_body_len);
+        assert!(p.max_segment_bytes < d.max_segment_bytes);
+        assert!(p.max_table_bytes < d.max_table_bytes);
+        assert_eq!(p.max_table_bytes, p.max_body_len / 4096 * 32);
+    }
 }

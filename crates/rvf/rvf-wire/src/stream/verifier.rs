@@ -481,6 +481,13 @@ impl<'p> StreamVerifier<'p> {
         s.next += 1;
         if s.next == s.n {
             s.done = true;
+            // Free the finished segment's chunk table: the retained bound is
+            // about OPEN segments (F3-06). Late duplicates of this segment
+            // can no longer be hash-checked, but they release nothing and are
+            // charged to the duplicate cap.
+            if let Some(l) = s.leaves.take() {
+                self.table_bytes -= l.len() as u64;
+            }
             segment_verified = true;
             self.left -= 1;
             let st = e.stage as usize;
@@ -528,10 +535,17 @@ impl<'p> StreamVerifier<'p> {
         let mut w = e.chunk_table_hash;
         if let Some(l) = &self.segs[i].leaves {
             w.copy_from_slice(&l[idx as usize * 32..idx as usize * 32 + 32]);
+            if !ct_eq(&leaf_hash(&h.file_id, seg_id, idx, bytes), &w) {
+                return Err(self.fault(ErrorCode::StreamChunkHashMismatch));
+            }
+        } else if self.segs[i].n <= 1 {
+            // Single-chunk segment: the entry commits to the leaf itself.
+            if !ct_eq(&leaf_hash(&h.file_id, seg_id, idx, bytes), &w) {
+                return Err(self.fault(ErrorCode::StreamChunkHashMismatch));
+            }
         }
-        if !ct_eq(&leaf_hash(&h.file_id, seg_id, idx, bytes), &w) {
-            return Err(self.fault(ErrorCode::StreamChunkHashMismatch));
-        }
+        // else: a finished multi-chunk segment whose table was freed: nothing
+        // is released by a duplicate, so it is only counted.
         self.count_duplicate()?;
         Ok(Event::Duplicate {
             seg_id,
@@ -628,8 +642,9 @@ impl<'p> StreamVerifier<'p> {
         };
         let mut ident = Sha256::new();
         let mut buf = alloc::vec![0u8; 65536];
-        for (i, e) in entries.iter().enumerate() {
+        for e in entries.iter() {
             let n = h.chunk_count(e.stored_len).unwrap_or(1);
+            let mut seg_leaves: Vec<u8> = Vec::new();
             for idx in 0..n {
                 let len = h.chunk_len(e.stored_len, idx).unwrap_or(0);
                 let mut lh = rvf_crypto::LeafHasher::new(&h.file_id, e.seg_id, idx, len);
@@ -645,11 +660,27 @@ impl<'p> StreamVerifier<'p> {
                     off += k as u64;
                     left -= k as u64;
                 }
-                let mut want = e.chunk_table_hash;
-                if let Some(l) = &self.segs[i].leaves {
-                    want.copy_from_slice(&l[idx as usize * 32..idx as usize * 32 + 32]);
+                let Some(leaf) = lh.finalize() else {
+                    self.state = StreamState::Poisoned(ErrorCode::StreamChunkHashMismatch);
+                    return Err(ErrorCode::StreamChunkHashMismatch);
+                };
+                if n == 1 {
+                    // The entry commits to the leaf itself.
+                    if !ct_eq(&leaf, &e.chunk_table_hash) {
+                        self.state = StreamState::Poisoned(ErrorCode::StreamChunkHashMismatch);
+                        return Err(ErrorCode::StreamChunkHashMismatch);
+                    }
+                } else {
+                    seg_leaves.extend_from_slice(&leaf);
                 }
-                if !lh.finalize().is_some_and(|got| ct_eq(&got, &want)) {
+            }
+            if n > 1 {
+                // Retained tables are freed once a segment verifies (F3-06), so
+                // the commitment is re-derived from the re-read bytes: the
+                // leaves must hash to the entry's `chunk_table_hash`.
+                let ok = chunk_list_hash_flat(&h.file_id, e.seg_id, &seg_leaves)
+                    .is_some_and(|got| ct_eq(&got, &e.chunk_table_hash));
+                if !ok {
                     self.state = StreamState::Poisoned(ErrorCode::StreamChunkHashMismatch);
                     return Err(ErrorCode::StreamChunkHashMismatch);
                 }

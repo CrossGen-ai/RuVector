@@ -114,6 +114,19 @@ pub struct RvfOptions {
     /// `open_signed`; with an empty list every signature-checking policy
     /// refuses signed files as `UnknownSigner`.
     pub trusted_signers: Vec<[u8; 32]>,
+    /// Freshness pin (F3-02): the lowest manifest epoch a signature-checking
+    /// open accepts. A signed page by itself proves authenticity, not
+    /// freshness; a caller that remembers the epoch it last accepted passes it
+    /// here and an older (rolled-back) state is refused with
+    /// `StreamStaleEpoch`. Default 0 (no pin).
+    pub min_epoch: u32,
+    /// Serve the signed state even though a newer parseable manifest exists
+    /// beyond the signed page (an unsigned tail: an interrupted commit, a
+    /// planted manifest, or a rollback by page swap). Default `false`: a
+    /// signature-checking open refuses such a file. When `true` the store
+    /// opens and reports the ignored manifest through
+    /// `RvfStore::newer_manifest_ignored`.
+    pub serve_signed_prefix: bool,
 }
 
 impl Default for RvfOptions {
@@ -130,6 +143,8 @@ impl Default for RvfOptions {
             witness: WitnessConfig::default(),
             security_policy: SecurityPolicy::Strict,
             trusted_signers: Vec::new(),
+            min_epoch: 0,
+            serve_signed_prefix: false,
         }
     }
 }

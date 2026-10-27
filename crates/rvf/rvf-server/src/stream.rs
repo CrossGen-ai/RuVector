@@ -12,12 +12,14 @@
 //! malformed or unsatisfiable ranges get 416); one response is capped at
 //! `max_range_bytes`; TCP replies are capped at `tcp_max_response`.
 
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -55,6 +57,13 @@ pub struct StreamServerConfig {
     pub idle_timeout: Duration,
     /// Hard wall-clock limit for one body response.
     pub total_deadline: Duration,
+    /// Minimum average delivery rate once `rate_grace` has passed, measured per
+    /// `rate_grace` window. A reader below it is cut off and its slot freed.
+    pub min_rate_bytes_per_sec: u64,
+    /// Window (and start-up allowance) for the minimum-rate rule.
+    pub rate_grace: Duration,
+    /// Concurrent streams (HTTP) / connections (TCP) one client address may hold.
+    pub max_streams_per_client: usize,
 }
 
 impl StreamServerConfig {
@@ -70,9 +79,55 @@ impl StreamServerConfig {
             max_range_bytes: 256 << 20,
             tcp_max_response: 1 << 20,
             idle_timeout: Duration::from_secs(30),
-            total_deadline: Duration::from_secs(3600),
+            total_deadline: Duration::from_secs(600),
+            min_rate_bytes_per_sec: 32 << 10,
+            rate_grace: Duration::from_secs(10),
+            max_streams_per_client: 4,
         }
     }
+}
+
+/// Per-client-address slot accounting.
+#[derive(Default)]
+pub struct ClientTable(Mutex<HashMap<IpAddr, usize>>);
+
+/// One slot held by a client address; released on drop.
+pub struct ClientSlot {
+    table: Arc<ClientTable>,
+    ip: IpAddr,
+}
+
+impl ClientTable {
+    fn acquire(self: &Arc<Self>, ip: IpAddr, cap: usize) -> Option<ClientSlot> {
+        let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let n = m.entry(ip).or_insert(0);
+        if *n >= cap.max(1) {
+            return None;
+        }
+        *n += 1;
+        Some(ClientSlot {
+            table: self.clone(),
+            ip,
+        })
+    }
+}
+
+impl Drop for ClientSlot {
+    fn drop(&mut self) {
+        let mut m = self.table.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(n) = m.get_mut(&self.ip) {
+            *n -= 1;
+            if *n == 0 {
+                m.remove(&self.ip);
+            }
+        }
+    }
+}
+
+/// Everything one HTTP stream holds: pool permit plus per-client slot.
+pub struct StreamSlot {
+    _permit: OwnedSemaphorePermit,
+    _client: Option<ClientSlot>,
 }
 
 /// Loaded stream server state.
@@ -81,6 +136,8 @@ pub struct StreamServer {
     plan: Arc<StreamPlan>,
     permits: Arc<Semaphore>,
     tcp_permits: Arc<Semaphore>,
+    http_clients: Arc<ClientTable>,
+    tcp_clients: Arc<ClientTable>,
     cfg: StreamServerConfig,
 }
 
@@ -124,6 +181,8 @@ impl StreamServer {
         Ok(Arc::new(Self {
             permits: Arc::new(Semaphore::new(cfg.max_concurrent_streams.max(1))),
             tcp_permits: Arc::new(Semaphore::new(cfg.max_concurrent_streams.max(1))),
+            http_clients: Arc::default(),
+            tcp_clients: Arc::default(),
             body: Arc::new(body),
             plan: Arc::new(plan),
             cfg,
@@ -161,9 +220,27 @@ impl StreamServer {
         self.tcp_permits.clone().try_acquire_owned().ok()
     }
 
-    /// Take one HTTP stream permit (held until dropped), if any is free.
-    pub fn try_permit(&self) -> Option<OwnedSemaphorePermit> {
-        self.permits.clone().try_acquire_owned().ok()
+    /// Take one HTTP stream slot (held until dropped): a pool permit and, when
+    /// the peer address is known, a per-client slot.
+    pub fn try_permit(&self, peer: Option<IpAddr>) -> Option<StreamSlot> {
+        let client = match peer {
+            Some(ip) => Some(
+                self.http_clients
+                    .acquire(ip, self.cfg.max_streams_per_client)?,
+            ),
+            None => None,
+        };
+        let permit = self.permits.clone().try_acquire_owned().ok()?;
+        Some(StreamSlot {
+            _permit: permit,
+            _client: client,
+        })
+    }
+
+    /// Per-client TCP connection slot (stream-enabled servers only).
+    pub fn try_tcp_client(&self, peer: IpAddr) -> Option<ClientSlot> {
+        self.tcp_clients
+            .acquire(peer, self.cfg.max_streams_per_client.saturating_mul(4))
     }
 }
 
@@ -216,7 +293,11 @@ fn parse_range(v: &str, total: u64) -> Result<(u64, u64), ()> {
     Ok((start, last + 1))
 }
 
-async fn body(State(s): State<Arc<StreamServer>>, headers: HeaderMap) -> Response {
+async fn body(
+    State(s): State<Arc<StreamServer>>,
+    peer: Option<ConnectInfo<SocketAddr>>,
+    headers: HeaderMap,
+) -> Response {
     let total = s.stream_len();
     let (start, mut end, partial) = match headers.get(header::RANGE) {
         None => (0, total, false),
@@ -235,7 +316,7 @@ async fn body(State(s): State<Arc<StreamServer>>, headers: HeaderMap) -> Respons
     if partial {
         end = end.min(start + s.cfg.max_range_bytes);
     }
-    let Some(permit) = s.try_permit() else {
+    let Some(permit) = s.try_permit(peer.map(|c| c.0.ip())) else {
         return (StatusCode::TOO_MANY_REQUESTS, "too many concurrent streams").into_response();
     };
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(4);
@@ -247,6 +328,8 @@ async fn body(State(s): State<Arc<StreamServer>>, headers: HeaderMap) -> Respons
         let _permit = permit;
         let started = Instant::now();
         let (idle, deadline) = (srv.cfg.idle_timeout, srv.cfg.total_deadline);
+        let (win, floor) = (srv.cfg.rate_grace, srv.cfg.min_rate_bytes_per_sec);
+        let (mut win_start, mut win_bytes) = (started, 0u64);
         let mut at = start;
         while at < end {
             if started.elapsed() > deadline {
@@ -262,6 +345,17 @@ async fn body(State(s): State<Arc<StreamServer>>, headers: HeaderMap) -> Respons
             // reads, and gives up after `idle`.
             if tx.send_timeout(Ok(Bytes::from(piece)), idle).await.is_err() {
                 return;
+            }
+            // Minimum-rate rule: over each `win` window the client must take
+            // at least `floor` bytes/s, else the slot is freed.
+            win_bytes += to - at;
+            let el = win_start.elapsed();
+            if el >= win {
+                if (win_bytes as u128) * 1_000 < (floor as u128) * el.as_millis() {
+                    return;
+                }
+                win_start = Instant::now();
+                win_bytes = 0;
             }
             at = to;
         }

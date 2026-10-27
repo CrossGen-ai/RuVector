@@ -94,7 +94,12 @@ pub fn start(f: &Fixture, tweak: impl FnOnce(&mut StreamServerConfig)) -> Runnin
     let http = listener.local_addr().unwrap();
     let app = rvf_server::stream::router(server.clone());
     rt.spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
     let tcp_port = free_port();
     let tcp: SocketAddr = format!("127.0.0.1:{tcp_port}").parse().unwrap();
