@@ -34,6 +34,8 @@ const SEG_VEC: u8 = 0x01;
 const SEG_INDEX: u8 = 0x02;
 const SEG_JOURNAL: u8 = 0x04;
 const MAX_WITNESSES: usize = 4096;
+/// Default cap on bytes of INDEX / JOURNAL segments buffered at once.
+const DEFAULT_BUFFER_BUDGET: u64 = 256 << 20;
 
 /// Audit record of a state change (the RVM witness chain consumes these).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,6 +106,9 @@ pub struct StreamIngest<'p> {
     deleted: HashSet<u64>,
     witnesses: Vec<StreamWitness>,
     unpublished: bool,
+    dropped_witnesses: u64,
+    buffered: u64,
+    buffer_budget: u64,
     pins: Option<&'p dyn rvf_wire::stream::PinStore>,
 }
 
@@ -122,6 +127,9 @@ impl<'p> StreamIngest<'p> {
             deleted: HashSet::new(),
             witnesses: Vec::new(),
             unpublished: false,
+            dropped_witnesses: 0,
+            buffered: 0,
+            buffer_budget: DEFAULT_BUFFER_BUDGET,
         }
     }
 
@@ -161,9 +169,29 @@ impl<'p> StreamIngest<'p> {
     }
 
     fn witness(&mut self, w: StreamWitness) {
-        if self.witnesses.len() < MAX_WITNESSES {
+        // Terminal and audit-critical records are always kept; only the
+        // repetitive Suspended/Resumed/LayerPublished trail is capped.
+        let routine = matches!(
+            w,
+            StreamWitness::Suspended | StreamWitness::Resumed | StreamWitness::LayerPublished(_)
+        );
+        if !routine || self.witnesses.len() < MAX_WITNESSES {
             self.witnesses.push(w);
+        } else {
+            self.dropped_witnesses += 1;
         }
+    }
+
+    /// Routine witness records dropped after the cap (terminal records are
+    /// never dropped).
+    pub fn dropped_witnesses(&self) -> u64 {
+        self.dropped_witnesses
+    }
+
+    /// Cap bytes of INDEX / JOURNAL segments buffered at once (default
+    /// 256 MiB). Exceeding it poisons the stream with `StreamLimitExceeded`.
+    pub fn set_buffer_budget(&mut self, bytes: u64) {
+        self.buffer_budget = bytes;
     }
 
     /// Input ended before `Complete`.
@@ -246,7 +274,15 @@ impl<'p> StreamIngest<'p> {
                 out.refused = Some(ErrorCode::StreamFrameSizeLie);
                 break;
             }
-            let total = hdr + declared as usize;
+            // Checked: on a 32-bit target `hdr + declared` can wrap (F2-11).
+            let Some(total) = usize::try_from(declared)
+                .ok()
+                .and_then(|d| d.checked_add(hdr))
+            else {
+                self.verifier.poison(ErrorCode::StreamFrameSizeLie);
+                out.refused = Some(ErrorCode::StreamFrameSizeLie);
+                break;
+            };
             if rest.len() < total {
                 break;
             }
@@ -299,6 +335,7 @@ impl<'p> StreamIngest<'p> {
         self.index = ProgressiveIndex::new();
         self.vectors.clear();
         self.parses.clear();
+        self.buffered = 0;
         self.deleted.clear();
     }
 
@@ -338,6 +375,15 @@ impl<'p> StreamIngest<'p> {
         let Some(&(ty, stored)) = self.kinds.get(&seg_id) else {
             return;
         };
+        if matches!(ty, SEG_INDEX | SEG_JOURNAL) {
+            // Whole-segment buffering is bounded by an ingest-level budget on
+            // top of the signed table's per-segment sizes.
+            if self.buffered + bytes.len() as u64 > self.buffer_budget {
+                self.verifier.poison(ErrorCode::StreamLimitExceeded);
+                return;
+            }
+            self.buffered += bytes.len() as u64;
+        }
         let p = self.parses.entry(seg_id).or_insert_with(|| match ty {
             SEG_VEC => Parse::Vec(VecParse::new(stored)),
             SEG_INDEX | SEG_JOURNAL => Parse::Buf(Vec::new()),
@@ -356,10 +402,13 @@ impl<'p> StreamIngest<'p> {
             Parse::Ignore => {}
         }
         if done {
-            match self.parses.remove(&seg_id) {
-                Some(Parse::Buf(b)) if ty == SEG_INDEX => self.publish_index(&b),
-                Some(Parse::Buf(b)) if ty == SEG_JOURNAL => self.apply_journal(&b),
-                _ => {}
+            if let Some(Parse::Buf(b)) = self.parses.remove(&seg_id) {
+                self.buffered = self.buffered.saturating_sub(b.len() as u64);
+                if ty == SEG_INDEX {
+                    self.publish_index(&b);
+                } else {
+                    self.apply_journal(&b);
+                }
             }
         }
     }
@@ -387,6 +436,16 @@ impl<'p> StreamIngest<'p> {
                 self.verifier.poison(ErrorCode::StreamTableInvalid);
                 return;
             };
+            // Partition ranges must be well formed; their width is harmless
+            // (queries visit only present ids) but an inverted range is a lie.
+            if a.layer
+                .partition_map
+                .iter()
+                .any(|p| p.vector_id_end < p.vector_id_start)
+            {
+                self.verifier.poison(ErrorCode::StreamTableInvalid);
+                return;
+            }
             self.vectors.set_dim(a.dim);
             for (id, v) in &a.anchors {
                 self.vectors.insert(*id, v);

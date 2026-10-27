@@ -36,14 +36,17 @@ fn r2_legit_signed_store_survives_all_ops() {
     let refs: Vec<&[f32]> = v.iter().map(Vec::as_slice).collect();
     let ids: Vec<u64> = (0..8).collect();
     s.ingest_batch(&refs, &ids, None).unwrap();
-    s.embed_kernel(0, 0, 0, &[7u8; 300], 8080, Some("console=ttyS0")).unwrap();
+    s.embed_kernel(0, 0, 0, &[7u8; 300], 8080, Some("console=ttyS0"))
+        .unwrap();
     s.embed_ebpf(1, 1, 4, &[9u8; 100], None).unwrap();
     s.embed_dashboard(0, b"index.html", "index.html").unwrap();
     s.embed_wasm(0, 0, 0, b"\0asm-xxxxxxxx", 1, 0, 0).unwrap();
-    s.query_audited(&[1.0, 1.0, 2.0, 3.0], 3, &QueryOptions::default()).unwrap();
+    s.query_audited(&[1.0, 1.0, 2.0, 3.0], 3, &QueryOptions::default())
+        .unwrap();
     s.delete(&[3]).unwrap();
     s.compact().unwrap();
-    s.query_audited(&[1.0, 1.0, 2.0, 3.0], 3, &QueryOptions::default()).unwrap();
+    s.query_audited(&[1.0, 1.0, 2.0, 3.0], 3, &QueryOptions::default())
+        .unwrap();
     s.compact().unwrap();
     s.close().unwrap();
     let s = strict(&p).expect("paranoid open after full lifecycle");
@@ -63,7 +66,8 @@ fn r2_legit_signed_store_survives_all_ops() {
 fn signed_with_wasm(dir: &std::path::Path) -> std::path::PathBuf {
     let p = signed_store(dir);
     let mut s = owner(&p);
-    s.embed_wasm(0, 0, 0, b"\0asm-GOOD-GOOD-GOOD", 1, 0, 0).unwrap();
+    s.embed_wasm(0, 0, 0, b"\0asm-GOOD-GOOD-GOOD", 1, 0, 0)
+        .unwrap();
     s.close().unwrap();
     p
 }
@@ -76,12 +80,18 @@ fn r2_midsession_tamper_then_compact_is_refused() {
     let p = signed_with_wasm(d.path());
     let mut s = owner(&p);
     let mut bytes = std::fs::read(&p).unwrap();
-    let (off, _, len) = *segments(&bytes).iter().find(|x| x.1 == SegmentType::Wasm as u8).unwrap();
+    let (off, _, len) = *segments(&bytes)
+        .iter()
+        .find(|x| x.1 == SegmentType::Wasm as u8)
+        .unwrap();
     bytes[off + 64 + len - 1] ^= 1;
     let h = compute_shake256_128(&bytes[off + 64..off + 64 + len]);
     bytes[off + 0x28..off + 0x38].copy_from_slice(&h);
     std::fs::write(&p, &bytes).unwrap();
-    assert!(s.compact().is_err(), "tampered source must refuse compaction");
+    assert!(
+        s.compact().is_err(),
+        "tampered source must refuse compaction"
+    );
 }
 
 /// Tamper of a segment type compaction does NOT verify (it skips Vec/Meta/
@@ -93,7 +103,10 @@ fn r2_midsession_vec_tamper_not_laundered() {
     let p = signed_store(d.path());
     let mut s = owner(&p);
     let mut bytes = std::fs::read(&p).unwrap();
-    let (off, _, len) = *segments(&bytes).iter().find(|x| x.1 == SegmentType::Vec as u8).unwrap();
+    let (off, _, len) = *segments(&bytes)
+        .iter()
+        .find(|x| x.1 == SegmentType::Vec as u8)
+        .unwrap();
     bytes[off + 64 + len - 1] ^= 0x40;
     std::fs::write(&p, &bytes).unwrap();
     let before = s.read_all_vectors();
@@ -117,13 +130,19 @@ fn r2_injected_segment_with_witness_flow() {
         let mut s = RvfStore::create_signed(&p, o.clone(), &SECRET).unwrap();
         let v = rows(6, 0.0);
         let refs: Vec<&[f32]> = v.iter().map(Vec::as_slice).collect();
-        s.ingest_batch(&refs, &(0..6).collect::<Vec<u64>>(), None).unwrap();
+        s.ingest_batch(&refs, &(0..6).collect::<Vec<u64>>(), None)
+            .unwrap();
         s.close().unwrap();
     }
     let bytes = std::fs::read(&p).unwrap();
     let (body, page) = rvf_wire::tail_scan::split_root_page(&bytes);
     let payload = vec![0xEEu8; 128];
-    let mut forged = write_segment(SegmentType::Wasm as u8, &payload, SegmentFlags::empty(), 9999);
+    let mut forged = write_segment(
+        SegmentType::Wasm as u8,
+        &payload,
+        SegmentFlags::empty(),
+        9999,
+    );
     forged[0x20] = 2;
     forged[0x28..0x38].copy_from_slice(&compute_shake256_128(&payload));
     let mut evil = body.to_vec();
@@ -133,11 +152,15 @@ fn r2_injected_segment_with_witness_flow() {
     let mut oo = opts(&[public(&SECRET)]);
     oo.witness.audit_queries = true;
     let mut s = RvfStore::open_signed(&p, oo, SecurityPolicy::Strict, &SECRET).unwrap();
-    s.query_audited(&[1.0, 1.0, 2.0, 3.0], 2, &QueryOptions::default()).unwrap();
+    s.query_audited(&[1.0, 1.0, 2.0, 3.0], 2, &QueryOptions::default())
+        .unwrap();
     s.compact().unwrap();
     s.close().unwrap();
     let s = strict(&p).unwrap();
-    assert!(s.extract_wasm().unwrap().is_none(), "injected wasm became signed");
+    assert!(
+        s.extract_wasm().unwrap().is_none(),
+        "injected wasm became signed"
+    );
 }
 
 /// F-03 fix: 300 fake manifest candidates after the real manifest.
@@ -159,18 +182,32 @@ fn r2_hide_real_manifest_behind_fake_candidates_plain() {
     let d = tempfile::tempdir().unwrap();
     let p = d.path().join("plain.rvf");
     {
-        let mut s = RvfStore::create(&p, RvfOptions { dimension: 4, ..Default::default() }).unwrap();
+        let mut s = RvfStore::create(
+            &p,
+            RvfOptions {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let v = rows(6, 0.0);
         let refs: Vec<&[f32]> = v.iter().map(Vec::as_slice).collect();
-        s.ingest_batch(&refs, &(0..6).collect::<Vec<u64>>(), None).unwrap();
+        s.ingest_batch(&refs, &(0..6).collect::<Vec<u64>>(), None)
+            .unwrap();
         s.close().unwrap();
     }
     let mut b = std::fs::read(&p).unwrap();
     b.extend_from_slice(&fake_header_run(300));
     std::fs::write(&p, &b).unwrap();
     let r = RvfStore::open_readonly(&p);
-    eprintln!("plain, 300 fake candidates after the real manifest: open ok = {}", r.is_ok());
-    assert!(r.is_ok(), "availability: real manifest hidden by 300 candidates");
+    eprintln!(
+        "plain, 300 fake candidates after the real manifest: open ok = {}",
+        r.is_ok()
+    );
+    assert!(
+        r.is_ok(),
+        "availability: real manifest hidden by 300 candidates"
+    );
 }
 
 #[test]
@@ -184,7 +221,10 @@ fn r2_hide_real_manifest_behind_fake_candidates_strict() {
     e.extend_from_slice(page.unwrap());
     std::fs::write(&p, &e).unwrap();
     let r = strict(&p);
-    eprintln!("strict, 300 fake candidates between manifest and page: ok = {}", r.is_ok());
+    eprintln!(
+        "strict, 300 fake candidates between manifest and page: ok = {}",
+        r.is_ok()
+    );
     assert!(r.is_ok());
 }
 
@@ -196,10 +236,18 @@ fn r2_f14_padding_plant_forces_byte_granular() {
     let d = tempfile::tempdir().unwrap();
     let p = d.path().join("plain.rvf");
     {
-        let mut s = RvfStore::create(&p, RvfOptions { dimension: 4, ..Default::default() }).unwrap();
+        let mut s = RvfStore::create(
+            &p,
+            RvfOptions {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let v = rows(6, 0.0);
         let refs: Vec<&[f32]> = v.iter().map(Vec::as_slice).collect();
-        s.ingest_batch(&refs, &(0..6).collect::<Vec<u64>>(), None).unwrap();
+        s.ingest_batch(&refs, &(0..6).collect::<Vec<u64>>(), None)
+            .unwrap();
         s.close().unwrap();
     }
     let mut bytes = std::fs::read(&p).unwrap();
@@ -214,18 +262,44 @@ fn r2_f14_padding_plant_forces_byte_granular() {
     fm.extend_from_slice(&0u32.to_le_bytes());
     fm.extend_from_slice(&[0u8; 4]);
     fm.extend_from_slice(&0u32.to_le_bytes());
-    payload.extend_from_slice(&write_segment(SegmentType::Manifest as u8, &fm, SegmentFlags::empty(), 777));
-    bytes.extend_from_slice(&write_segment(SegmentType::Vec as u8, &payload, SegmentFlags::empty(), 778));
-    assert_eq!(RvfStore::open_readonly(&{ std::fs::write(&p, &bytes).unwrap(); p.clone() }).unwrap().status().total_vectors, 6);
+    payload.extend_from_slice(&write_segment(
+        SegmentType::Manifest as u8,
+        &fm,
+        SegmentFlags::empty(),
+        777,
+    ));
+    bytes.extend_from_slice(&write_segment(
+        SegmentType::Vec as u8,
+        &payload,
+        SegmentFlags::empty(),
+        778,
+    ));
+    assert_eq!(
+        RvfStore::open_readonly(&{
+            std::fs::write(&p, &bytes).unwrap();
+            p.clone()
+        })
+        .unwrap()
+        .status()
+        .total_vectors,
+        6
+    );
     bytes[unpadded..unpadded + 4].copy_from_slice(&rvf_types::SEGMENT_MAGIC_BYTES);
     bytes[unpadded + 4] = 1;
     bytes[unpadded + 5] = 1;
     bytes[0x20] = 0;
     std::fs::write(&p, &bytes).unwrap();
-    eprintln!("legacy scan chosen = {}", rvf_runtime::read_path::scan_is_legacy_for_bytes(&bytes));
+    eprintln!(
+        "legacy scan chosen = {}",
+        rvf_runtime::read_path::scan_is_legacy_for_bytes(&bytes)
+    );
     let got = RvfStore::open_readonly(&p).map(|s| s.status().total_vectors);
     eprintln!("padding-plant result: {got:?}");
-    assert_ne!(got.ok(), Some(0), "attacker selected byte-granular scan and its fake manifest");
+    assert_ne!(
+        got.ok(),
+        Some(0),
+        "attacker selected byte-granular scan and its fake manifest"
+    );
 }
 
 /// F-16 completeness oracle: flipping any single bit of any of the 64 header
@@ -270,9 +344,14 @@ fn r2_f12_plain_open_is_readonly_and_allow_unsigning_cuts() {
     assert!(s.delete(&[1]).is_err());
     assert!(s.compact().is_err());
     assert!(s.embed_wasm(0, 0, 0, b"x", 0, 0, 0).is_err());
-    assert!(s.set_file_metadata("k".into(), rvf_runtime::options::MetadataValue::U64(1)).is_err());
+    assert!(s
+        .set_file_metadata("k".into(), rvf_runtime::options::MetadataValue::U64(1))
+        .is_err());
     s.close().unwrap();
-    assert!(strict(&p).is_ok(), "refused writes left the signature intact");
+    assert!(
+        strict(&p).is_ok(),
+        "refused writes left the signature intact"
+    );
 }
 
 /// F2-06: F-16 pinned the header of every directory segment, but the MANIFEST
@@ -298,5 +377,8 @@ fn r2_f2_06_manifest_segment_header_bits_are_unpinned() {
     }
     let bytes: std::collections::BTreeSet<_> = unpinned.iter().map(|x| x.0).collect();
     eprintln!("manifest header bytes whose flips are accepted under Paranoid: {bytes:?}");
-    assert!(unpinned.is_empty(), "unpinned manifest header bytes: {bytes:?}");
+    assert!(
+        unpinned.is_empty(),
+        "unpinned manifest header bytes: {bytes:?}"
+    );
 }

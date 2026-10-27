@@ -31,12 +31,34 @@ pub struct DecodedA {
     pub anchors: Vec<(u64, Vec<f32>)>,
 }
 
+/// Decoded in-memory size is limited to this multiple of the payload size
+/// (plus a small constant). A signed payload therefore cannot make a client
+/// allocate more than about twice its wire size; legitimate layers decode at
+/// roughly 1.3x. Counts are charged *before* anything is allocated.
+pub const MAX_DECODE_AMPLIFICATION: usize = 2;
+const DECODE_SLACK: usize = 4096;
+/// Approximate per-node overhead of a `BTreeMap<u64, Vec<u64>>` entry.
+const NODE_OVERHEAD: usize = 80;
+
 struct Cur<'a> {
     b: &'a [u8],
     p: usize,
+    budget: usize,
 }
 
 impl<'a> Cur<'a> {
+    fn new(b: &'a [u8]) -> Self {
+        Self {
+            b,
+            p: 0,
+            budget: b.len() * MAX_DECODE_AMPLIFICATION + DECODE_SLACK,
+        }
+    }
+    /// Charge `n` bytes of decoded memory; `None` once the budget is spent.
+    fn charge(&mut self, n: usize) -> Option<()> {
+        self.budget = self.budget.checked_sub(n)?;
+        Some(())
+    }
     fn take(&mut self, n: usize) -> Option<&'a [u8]> {
         let s = self.b.get(self.p..self.p.checked_add(n)?)?;
         self.p += n;
@@ -75,6 +97,7 @@ fn get_layer(c: &mut Cur<'_>) -> Option<HnswLayer> {
     for _ in 0..n {
         let id = c.u64()?;
         let k = c.count(8)?;
+        c.charge(NODE_OVERHEAD + 8 * k)?;
         let mut nb = Vec::with_capacity(k);
         for _ in 0..k {
             nb.push(c.u64()?);
@@ -132,7 +155,7 @@ fn floats(c: &mut Cur<'_>, dim: usize) -> Option<Vec<f32>> {
 
 /// Decode Layer A; `None` on any malformation.
 pub fn decode_a(b: &[u8]) -> Option<DecodedA> {
-    let mut c = Cur { b, p: 0 };
+    let mut c = Cur::new(b);
     if c.take(4)? != MAGIC_A {
         return None;
     }
@@ -142,21 +165,25 @@ pub fn decode_a(b: &[u8]) -> Option<DecodedA> {
     }
     let top_layer_start = c.u32()? as usize;
     let ne = c.count(12)?;
+    c.charge(ne * std::mem::size_of::<(u64, u32)>())?;
     let mut entry_points = Vec::with_capacity(ne);
     for _ in 0..ne {
         entry_points.push((c.u64()?, c.u32()?));
     }
     let nl = c.count(4)?;
+    c.charge(nl * (std::mem::size_of::<HnswLayer>() + 8))?;
     let mut top_layers = Vec::with_capacity(nl);
     for _ in 0..nl {
         top_layers.push(get_layer(&mut c)?);
     }
     let nc = c.count(dim * 4)?;
+    c.charge(nc * (24 + 4 * dim))?;
     let mut centroids = Vec::with_capacity(nc);
     for _ in 0..nc {
         centroids.push(floats(&mut c, dim)?);
     }
     let np = c.count(20)?;
+    c.charge(np * std::mem::size_of::<PartitionEntry>())?;
     let mut partition_map = Vec::with_capacity(np);
     for _ in 0..np {
         partition_map.push(PartitionEntry {
@@ -168,6 +195,7 @@ pub fn decode_a(b: &[u8]) -> Option<DecodedA> {
         });
     }
     let na = c.count(8 + dim * 4)?;
+    c.charge(na * (8 + 24 + 4 * dim))?;
     let mut anchors = Vec::with_capacity(na);
     for _ in 0..na {
         let id = c.u64()?;
@@ -208,7 +236,7 @@ pub fn encode_b(b: &LayerB) -> Vec<u8> {
 
 /// Decode Layer B; `None` on any malformation.
 pub fn decode_b(b: &[u8]) -> Option<LayerB> {
-    let mut c = Cur { b, p: 0 };
+    let mut c = Cur::new(b);
     if c.take(4)? != MAGIC_B {
         return None;
     }
@@ -217,6 +245,7 @@ pub fn decode_b(b: &[u8]) -> Option<LayerB> {
     for _ in 0..n {
         let id = c.u64()?;
         let k = c.count(8)?;
+        c.charge(NODE_OVERHEAD + 8 * k)?;
         let mut nb = Vec::with_capacity(k);
         for _ in 0..k {
             nb.push(c.u64()?);
@@ -224,6 +253,7 @@ pub fn decode_b(b: &[u8]) -> Option<LayerB> {
         partial_adjacency.insert(id, nb);
     }
     let r = c.count(16)?;
+    c.charge(r * 16)?;
     let mut covered_ranges = Vec::with_capacity(r);
     for _ in 0..r {
         covered_ranges.push((c.u64()?, c.u64()?));

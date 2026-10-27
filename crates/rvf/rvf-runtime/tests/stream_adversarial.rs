@@ -336,3 +336,49 @@ fn sealed_requires_the_pin_to_still_hold() {
         "superseded session must not be sealed"
     );
 }
+
+/// F2-01: INDEX/JOURNAL segments are buffered whole; an ingest-level budget
+/// caps that (on top of the signed table's per-segment sizes).
+#[test]
+fn index_buffer_budget_poisons_instead_of_buffering() {
+    use rvf_runtime::progressive_stream::StreamIngest;
+    let f = fixture();
+    let keys = [f.public];
+    let mut ing = StreamIngest::new(StreamPolicy::new(&keys));
+    ing.set_buffer_budget(1000);
+    let mut refused = None;
+    for fr in frames(&f) {
+        let out = ing.feed(&fr);
+        if out.refused.is_some() {
+            refused = out.refused;
+            break;
+        }
+    }
+    let _ = refused;
+    assert!(matches!(
+        ing.state(),
+        StreamState::Poisoned(ErrorCode::StreamLimitExceeded)
+    ));
+    assert!(ing.vectors().is_empty() && !ing.layers().layer_a);
+}
+
+/// F2-03: routine witnesses are capped with a dropped count; terminal ones never.
+#[test]
+fn terminal_witnesses_survive_the_routine_cap() {
+    use rvf_runtime::progressive_stream::StreamIngest;
+    let f = fixture();
+    let keys = [f.public];
+    let mut ing = StreamIngest::new(StreamPolicy::new(&keys));
+    let d_len = 5 + f.bundle.descriptor.len();
+    ing.feed(&frames(&f).concat()[..d_len]);
+    for _ in 0..3000 {
+        ing.end_of_input();
+        ing.resume();
+    }
+    assert!(ing.dropped_witnesses() > 0);
+    ing.feed(&[0xEE]);
+    assert!(matches!(
+        ing.witnesses().last(),
+        Some(StreamWitness::StreamPoisoned { .. })
+    ));
+}

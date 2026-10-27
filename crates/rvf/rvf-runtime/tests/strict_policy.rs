@@ -160,6 +160,7 @@ fn resigned_with_a_different_key_is_unknown_signer_not_invalid_signature() {
             l1_offset: old.l1_offset,
             l1_length: old.l1_length,
             l1_content_hash: old.l1_content_hash,
+            l1_segment_id: old.l1_segment_id,
             total_vectors: 12,
             dimension: 4,
             profile: 0,
@@ -232,7 +233,7 @@ fn forged_fingerprint_claiming_the_trusted_signer_is_invalid_signature() {
 }
 
 #[test]
-fn stale_page_replay_after_a_planted_manifest_is_refused() {
+fn planted_newer_manifest_under_a_signed_page_is_ignored() {
     // Attacker keeps the genuine page (valid signature!) but plants a newer
     // manifest segment in front of it. The tail scan finds the plant; the
     // signed page commits to a different offset and hash.
@@ -264,18 +265,13 @@ fn stale_page_replay_after_a_planted_manifest_is_refused() {
     out.extend_from_slice(page.unwrap());
     std::fs::write(&p, &out).unwrap();
 
-    let e = security(open_err(&p, &[public(&SECRET)], SecurityPolicy::Strict));
-    match e {
-        SecurityError::ContentHashMismatch {
-            pointer_name,
-            seg_offset,
-            ..
-        } => {
-            assert_eq!(pointer_name, "l1_manifest");
-            assert_eq!(seg_offset, planted_off as u64);
-        }
-        other => panic!("{other:?}"),
-    }
+    // F2-07: under a signed page the page-named manifest is read directly, so
+    // a newer planted lookalike neither replaces nor hides it: the signed state
+    // is served (all 12 vectors), the plant is never consulted.
+    let _ = planted_off;
+    let s =
+        RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict).unwrap();
+    assert_eq!(s.status().total_vectors, 12);
 }
 
 #[test]

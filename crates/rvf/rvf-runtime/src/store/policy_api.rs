@@ -253,6 +253,7 @@ impl RvfStore {
         }
         if self.security.signing_key.is_some() {
             self.security.last_manifest = Some(LastManifest {
+                seg_id: located.header.segment_id,
                 offset: located.offset,
                 len: SEGMENT_HEADER_SIZE as u64 + located.payload.len() as u64,
                 hash: compute_shake256_128(&located.payload),
@@ -397,6 +398,7 @@ impl RvfStore {
                     l1_offset: last.offset,
                     l1_length: last.len,
                     l1_content_hash: last.hash,
+                    l1_segment_id: last.seg_id,
                     total_vectors: live,
                     dimension: self.options.dimension,
                     profile: self.options.profile,

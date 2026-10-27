@@ -72,6 +72,7 @@ impl Committed {
 /// Manifest facts the signed page must be re-bound to at the next commit.
 #[derive(Clone, Copy)]
 pub(super) struct LastManifest {
+    pub seg_id: u64,
     pub offset: u64,
     /// Header + payload length of the MANIFEST segment.
     pub len: u64,
@@ -242,6 +243,31 @@ pub(super) fn check_signed_root(
             pointer_name: "l1_manifest",
             expected_hash: v.l1_content_hash,
             actual_hash: actual,
+            seg_offset: off,
+        });
+    }
+    // The manifest segment's own header is pinned too (F2-06): the page
+    // commits to its payload hash and, for pages that record it, its id; every
+    // other header field must be what the writer emits.
+    let pad = rvf_wire::writer::calculate_padded_size(SEGMENT_HEADER_SIZE, located.payload.len())
+        - SEGMENT_HEADER_SIZE
+        - located.payload.len();
+    let h = &located.header;
+    let header_ok = h.version == rvf_types::SEGMENT_VERSION
+        && h.content_hash == actual
+        && h.flags == 0
+        && h.compression == 0
+        && h.reserved_0 == 0
+        && h.reserved_1 == 0
+        && h.uncompressed_len == 0
+        && h.timestamp_ns == 0
+        && h.alignment_pad as usize == pad
+        && (v.l1_segment_id == 0 || h.segment_id == v.l1_segment_id);
+    if !header_ok {
+        return Err(SecurityError::ContentHashMismatch {
+            pointer_name: "l1_manifest_header",
+            expected_hash: v.l1_content_hash,
+            actual_hash: h.content_hash,
             seg_offset: off,
         });
     }

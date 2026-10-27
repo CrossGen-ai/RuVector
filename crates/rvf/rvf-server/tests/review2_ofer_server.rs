@@ -5,37 +5,66 @@ use std::net::TcpStream;
 use std::time::Duration;
 use support::*;
 
-/// F2-05: `max_concurrent_streams` slots are held for as long as the client
-/// keeps the connection open and does not read. No idle/write timeout: N
-/// silent connections deny every other stream (HTTP and TCP 0x05 share the
-/// pool) indefinitely.
+/// F2-05 (fixed): silent clients cannot pin stream slots. A stream whose
+/// client stopped reading is aborted after `idle_timeout` and its slot freed;
+/// the TCP pool is separate from HTTP; silent TCP sockets are closed.
 #[test]
-fn f2_05_slowloris_pins_every_stream_slot() {
+fn f2_05_silent_clients_do_not_pin_stream_slots() {
     let f = fixture(60000, 32, 16, 5);
-    let r = start(&f, |c| c.max_concurrent_streams = 2);
-    assert!(r.server.stream_len() > 12 << 20, "need a body larger than socket buffers");
+    let r = start(&f, |c| {
+        c.max_concurrent_streams = 2;
+        c.idle_timeout = Duration::from_millis(800);
+    });
+    assert!(
+        r.server.stream_len() > 12 << 20,
+        "need a body larger than socket buffers"
+    );
     let mut held = Vec::new();
     for _ in 0..2 {
         let mut s = TcpStream::connect(r.http).unwrap();
-        s.write_all(b"GET /v1/stream/body HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").unwrap();
+        s.write_all(b"GET /v1/stream/body HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .unwrap();
         held.push(s); // never read
     }
-    std::thread::sleep(Duration::from_secs(4));
-    let (st, _, _) = raw_get(r.http, "/v1/stream/body", Some("bytes=0-9"));
-    assert_eq!(st, 429, "slots still pinned after 4 s of silence");
-    // TCP 0x05 draws on the same pool.
-    let mut t = TcpStream::connect(r.tcp).unwrap();
-    let mut p = vec![1u8];
-    p.extend_from_slice(&0u64.to_be_bytes());
-    p.extend_from_slice(&100u32.to_be_bytes());
-    let mut fr = (p.len() as u32).to_be_bytes().to_vec();
-    fr.extend_from_slice(&[0x05, 0, 0, 1]);
-    fr.extend_from_slice(&p);
-    t.write_all(&fr).unwrap();
-    let mut h = [0u8; 8];
-    t.read_exact(&mut h).unwrap();
-    assert_eq!(h[4], 0xFF, "TCP stream request refused while HTTP slots are pinned");
+    std::thread::sleep(Duration::from_millis(300));
+    // While HTTP slots are pinned: fail fast (429, not queued) ...
+    let t0 = std::time::Instant::now();
+    assert_eq!(raw_get(r.http, "/v1/stream/body", Some("bytes=0-9")).0, 429);
+    assert!(
+        t0.elapsed() < Duration::from_secs(1),
+        "refusal is immediate"
+    );
+    // ... and TCP 0x05 is a separate pool: it is served.
+    let tcp_req = |addr| {
+        let mut t = TcpStream::connect(addr).unwrap();
+        let mut p = vec![1u8];
+        p.extend_from_slice(&0u64.to_be_bytes());
+        p.extend_from_slice(&100u32.to_be_bytes());
+        let mut fr = (p.len() as u32).to_be_bytes().to_vec();
+        fr.extend_from_slice(&[0x05, 0, 0, 1]);
+        fr.extend_from_slice(&p);
+        t.write_all(&fr).unwrap();
+        let mut h = [0u8; 8];
+        t.read_exact(&mut h).unwrap();
+        h[4]
+    };
+    assert_eq!(tcp_req(r.tcp), 0x85, "TCP pool is independent of HTTP");
+    // After the idle timeout the abandoned streams release their slots.
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(raw_get(r.http, "/v1/stream/body", Some("bytes=0-9")).0, 206);
     drop(held);
+
+    // A silent TCP socket is closed by the server after the idle timeout.
+    let mut silent = TcpStream::connect(r.tcp).unwrap();
+    silent
+        .set_read_timeout(Some(Duration::from_secs(4)))
+        .unwrap();
+    let mut b = [0u8; 1];
+    assert_eq!(
+        silent.read(&mut b).unwrap(),
+        0,
+        "server closed the idle socket"
+    );
 }
 
 /// Hostile TCP 0x05 frames and hostile HTTP Range headers never kill the

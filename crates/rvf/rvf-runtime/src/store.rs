@@ -1885,6 +1885,7 @@ impl RvfStore {
                     hash_entries.as_ref().map(Vec::len),
                 );
                 self.security.last_manifest = Some(security::LastManifest {
+                    seg_id: m_id,
                     offset: m_offset,
                     len: SEGMENT_HEADER_SIZE as u64 + len,
                     hash: seg_writer
@@ -3770,6 +3771,7 @@ impl RvfStore {
                 .hash_of(manifest_seg_id)
                 .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
             self.security.last_manifest = Some(security::LastManifest {
+                seg_id: manifest_seg_id,
                 offset: manifest_offset,
                 len: SEGMENT_HEADER_SIZE as u64 + manifest_payload_len,
                 hash,

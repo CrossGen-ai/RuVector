@@ -71,6 +71,10 @@ pub struct StreamPolicy<'a> {
     /// Cap on chunk-table bytes retained (accepted tables are kept so that
     /// duplicate chunks of finished segments can be checked). A table frame
     /// that would exceed it is refused before anything is allocated.
+    ///
+    /// The default is derived from the default `max_body_len` (1 TiB) at the
+    /// smallest chunk size, so it is never below what the body limit allows;
+    /// a tighter `max_body_len` should be paired with a tighter cap.
     pub max_table_bytes: u64,
     /// Cap on idempotent duplicate frames; `None` = `4 * total chunks + 64`.
     /// Exceeding it poisons the stream (`StreamDuplicateFlood`).
@@ -93,7 +97,11 @@ impl<'a> StreamPolicy<'a> {
             now_ns: None,
             expected_policy_hash: None,
             fault_budget: 4,
-            max_table_bytes: 64 << 20,
+            // Derived from the body limit (F2-09): 32 bytes per 4 KiB chunk
+            // (the smallest chunk size) of a maximal body, so the default can
+            // never be below what `max_body_len` allows. Lower both together
+            // for a tighter retained-table bound.
+            max_table_bytes: (1u64 << 40) / 4096 * 32,
             max_duplicate_frames: None,
         }
     }

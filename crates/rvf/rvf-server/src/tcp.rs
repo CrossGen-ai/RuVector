@@ -72,7 +72,18 @@ async fn handle_connection(
     loop {
         // Read frame header: 4 bytes length + 1 byte msg_type + 3 bytes msg_id = 8 bytes
         let mut header = [0u8; 8];
-        match stream.read_exact(&mut header).await {
+        // With stream serving enabled, an idle connection is closed after the
+        // configured idle timeout (silent sockets must not linger).
+        let idle = stream_srv.as_ref().map(|s| s.config().idle_timeout);
+        let read = stream.read_exact(&mut header);
+        let got = match idle {
+            Some(t) => match tokio::time::timeout(t, read).await {
+                Ok(r) => r,
+                Err(_) => return Ok(()),
+            },
+            None => read.await,
+        };
+        match got {
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
             Err(e) => return Err(e),
@@ -88,7 +99,17 @@ async fn handle_connection(
         }
 
         let mut payload = vec![0u8; payload_len as usize];
-        stream.read_exact(&mut payload).await?;
+        match idle {
+            Some(t) => match tokio::time::timeout(t, stream.read_exact(&mut payload)).await {
+                Ok(r) => {
+                    r?;
+                }
+                Err(_) => return Ok(()),
+            },
+            None => {
+                stream.read_exact(&mut payload).await?;
+            }
+        }
 
         let response = match msg_type {
             MSG_QUERY => handle_query(&payload, &store).await,
@@ -360,7 +381,7 @@ fn handle_stream(payload: &[u8], srv: &StreamServer) -> Result<(u8, Vec<u8>), Tc
     if payload.len() != 13 {
         return Err(bad("stream request must be 13 bytes"));
     }
-    let _permit = srv.try_permit().ok_or_else(|| TcpError {
+    let _permit = srv.try_tcp_permit().ok_or_else(|| TcpError {
         code: 0x0108,
         message: "too many concurrent streams".into(),
     })?;

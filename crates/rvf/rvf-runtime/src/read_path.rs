@@ -83,6 +83,9 @@ pub struct ScanStats {
 /// millions of candidates; a legitimate file has the real one first or has a
 /// handful of torn leftovers newer than it.
 const MAX_PARSE_ATTEMPTS: u32 = 256;
+/// Payloads at most this large are cheap to reject and are not counted
+/// toward [`MAX_PARSE_ATTEMPTS`] (they are still charged to the byte budget).
+const HEAVY_PAYLOAD: u64 = 4096;
 /// First window read from the tail, then fixed-size blocks going backwards.
 const FIRST_BLOCK: u64 = 256 << 10;
 const BLOCK: u64 = 8 << 20;
@@ -145,6 +148,10 @@ fn mode_for_file<R: Read + Seek>(reader: &mut R, file_size: u64) -> io::Result<S
         return Ok(match (at_padded, at_unpadded) {
             (true, false) => ScanMode::Aligned,
             (false, true) => ScanMode::ByteGranular,
+            // A valid-looking header at BOTH positions means bytes were planted
+            // in the unhashed padding to force the weaker scan (F2-10): never
+            // pick byte-granular on ambiguity.
+            (true, true) => ScanMode::Aligned,
             _ if first_algo0 => ScanMode::ByteGranular,
             _ => ScanMode::Aligned,
         });
@@ -196,8 +203,16 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
     if file_size < SEGMENT_HEADER_SIZE as u64 {
         return Ok(None);
     }
-    let mode = mode_for_file(reader, file_size)?;
     let end = body_end(reader, file_size)?;
+    // Under a signature-checking policy the page names the manifest: read it
+    // directly. Newer lookalikes (crash leftovers, planted headers) are not
+    // consulted at all, so they cannot hide it or replace it (F2-07).
+    if let Some(o) = hint.expect_offset {
+        if let Some(m) = manifest_at(reader, o, file_size, end, stats)? {
+            return Ok(Some(m));
+        }
+    }
+    let mode = mode_for_file(reader, file_size)?;
     let (found, saw_any, exhausted) = scan_blocks(reader, file_size, end, mode, hint, stats)?;
     if found.is_some() || exhausted {
         return Ok(found);
@@ -206,6 +221,47 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
         return Ok(scan_blocks(reader, file_size, end, ScanMode::ByteGranular, hint, stats)?.0);
     }
     Ok(None)
+}
+
+/// Read and parse the manifest segment at exactly `offset`, or `None`.
+fn manifest_at<R: Read + Seek>(
+    reader: &mut R,
+    offset: u64,
+    file_size: u64,
+    body_end: u64,
+    stats: &mut ScanStats,
+) -> io::Result<Option<LocatedManifest>> {
+    let Some(header) = header_at(reader, offset, file_size)? else {
+        return Ok(None);
+    };
+    if header.seg_type != rvf_types::SegmentType::Manifest as u8
+        || header.payload_length > MAX_READ_PAYLOAD
+        || !offset.is_multiple_of(SEGMENT_ALIGNMENT as u64)
+    {
+        return Ok(None);
+    }
+    let end = offset
+        .saturating_add(SEGMENT_HEADER_SIZE as u64)
+        .saturating_add(header.payload_length);
+    if end > body_end || end > file_size {
+        return Ok(None);
+    }
+    let mut payload = vec![0u8; header.payload_length as usize];
+    reader.seek(SeekFrom::Start(offset + SEGMENT_HEADER_SIZE as u64))?;
+    stats.parse_attempts += 1;
+    stats.payload_bytes_parsed += header.payload_length;
+    stats.bytes_copied += header.payload_length;
+    stats.max_buffer = stats.max_buffer.max(header.payload_length);
+    reader.read_exact(&mut payload)?;
+    Ok(
+        parse_manifest_payload(&payload).map(|manifest| LocatedManifest {
+            manifest,
+            offset,
+            header,
+            payload,
+            mode: ScanMode::Aligned,
+        }),
+    )
 }
 
 /// Walk the segment area backwards in bounded blocks. Returns the manifest,
@@ -257,12 +313,18 @@ fn scan_blocks<R: Read + Seek>(
             ) {
                 continue;
             }
-            if stats.parse_attempts >= MAX_PARSE_ATTEMPTS
-                || (stats.parse_attempts > 0 && stats.payload_bytes_parsed + plen > budget)
+            // Only candidates that cost a real payload parse count toward the
+            // attempt cap, so a swarm of tiny fake headers cannot hide the
+            // real manifest (F2-07); the byte budget still bounds the total.
+            let heavy = plen > HEAVY_PAYLOAD;
+            if (heavy && stats.parse_attempts >= MAX_PARSE_ATTEMPTS)
+                || (stats.payload_bytes_parsed > 0 && stats.payload_bytes_parsed + plen > budget)
             {
                 return Ok((None, saw, true));
             }
-            stats.parse_attempts += 1;
+            if heavy {
+                stats.parse_attempts += 1;
+            }
             stats.payload_bytes_parsed += plen;
             let owned: Option<Vec<u8>>;
             let slice: &[u8] = if payload_end <= buf.len() {

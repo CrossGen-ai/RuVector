@@ -20,7 +20,7 @@ use crate::options::{DistanceMetric, RvfOptions, WitnessConfig};
 use crate::{QueryOptions, RvfStore};
 use ed25519_dalek::SigningKey;
 use rvf_index::{build_layer_a, build_layer_b};
-use rvf_types::{RvfError, SegmentType, SEGMENT_HEADER_SIZE};
+use rvf_types::{RvfError, SegmentType, SEGMENT_ALIGNMENT, SEGMENT_HEADER_SIZE};
 use rvf_wire::stream::{StreamBundle, StreamDescriptorBuilder};
 use rvf_wire::writer::calculate_padded_size;
 use std::collections::BTreeSet;
@@ -236,7 +236,18 @@ pub fn stage_plan(body: &[u8]) -> Vec<u8> {
         let Ok(h) = rvf_wire::read_segment_header(&body[off..]) else {
             break;
         };
-        let plen = h.payload_length as usize;
+        // Hostile lengths end the walk instead of overflowing (F2-08).
+        let Some(plen) = usize::try_from(h.payload_length)
+            .ok()
+            .and_then(|p| p.checked_add(SEGMENT_HEADER_SIZE))
+            .and_then(|t| {
+                off.checked_add(t)?
+                    .checked_add(SEGMENT_ALIGNMENT)
+                    .map(|_| t - SEGMENT_HEADER_SIZE)
+            })
+        else {
+            break;
+        };
         let payload = body.get(off + SEGMENT_HEADER_SIZE..off + SEGMENT_HEADER_SIZE + plen);
         let st = match h.seg_type {
             t if t == SegmentType::Journal as u8 => 0,

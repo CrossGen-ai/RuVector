@@ -2,7 +2,9 @@
 #[path = "support/stream_fixture.rs"]
 mod fx;
 use fx::*;
-use rvf_runtime::progressive_stream::client::{recover, ClientConfig, MemTransport, RunEnd, StreamClient};
+use rvf_runtime::progressive_stream::client::{
+    recover, ClientConfig, MemTransport, RunEnd, StreamClient,
+};
 use rvf_runtime::progressive_stream::layers::{decode_a, decode_b};
 use rvf_runtime::progressive_stream::{StreamIngest, StreamWitness};
 use rvf_wire::stream::{StreamPolicy, StreamState};
@@ -26,8 +28,14 @@ fn f2_03_witness_cap_drops_the_terminal_record() {
     let out = ing.feed(&[0xEE]);
     assert!(out.refused.is_some());
     assert!(matches!(ing.state(), StreamState::Poisoned(_)));
-    let has = ing.witnesses().iter().any(|w| matches!(w, StreamWitness::StreamPoisoned { .. }));
-    assert!(has, "terminal StreamPoisoned witness was dropped (cap 4096)");
+    let has = ing
+        .witnesses()
+        .iter()
+        .any(|w| matches!(w, StreamWitness::StreamPoisoned { .. }));
+    assert!(
+        has,
+        "terminal StreamPoisoned witness was dropped (cap 4096)"
+    );
 }
 
 /// F2-04: `with_log` opens the log without append/seek-to-end. After
@@ -45,7 +53,10 @@ fn f2_04_log_is_corrupted_when_a_recovered_client_resumes() {
         let mut c = StreamClient::new(
             StreamPolicy::new(&keys),
             MemTransport::new(half.clone()),
-            ClientConfig { max_stalls: 1, frame_retries: 2 },
+            ClientConfig {
+                max_stalls: 1,
+                frame_retries: 2,
+            },
         )
         .with_log(&log)
         .unwrap();
@@ -54,15 +65,26 @@ fn f2_04_log_is_corrupted_when_a_recovered_client_resumes() {
     assert_eq!(std::fs::metadata(&log).unwrap().len(), half.len() as u64);
     let (ing, replayed) = recover(StreamPolicy::new(&keys), &log).unwrap();
     assert_eq!(replayed, half.len() as u64);
-    let mut c = StreamClient::with_ingest(ing, MemTransport::new(full.clone()), ClientConfig::default())
-        .with_log(&log)
-        .unwrap();
+    let mut c = StreamClient::with_ingest(
+        ing,
+        MemTransport::new(full.clone()),
+        ClientConfig::default(),
+    )
+    .with_log(&log)
+    .unwrap();
     let end = c.run(&mut |_| {});
     assert!(end.all_verified(), "{end:?}");
     let on_disk = std::fs::read(&log).unwrap();
-    assert_eq!(on_disk.len(), full.len(), "log should hold the whole stream");
+    assert_eq!(
+        on_disk.len(),
+        full.len(),
+        "log should hold the whole stream"
+    );
     let (ing2, _) = recover(StreamPolicy::new(&keys), &log).unwrap();
-    assert!(matches!(ing2.state(), StreamState::Complete | StreamState::CompleteUnverified));
+    assert!(matches!(
+        ing2.state(),
+        StreamState::Complete | StreamState::CompleteUnverified
+    ));
 }
 
 /// Truncated / hostile logs never publish unverified data and never panic.
@@ -102,7 +124,14 @@ fn f2_oracle_hostile_logs() {
 }
 
 fn rss_kb() -> u64 {
-    std::fs::read_to_string("/proc/self/statm").unwrap().split_whitespace().nth(1).unwrap().parse::<u64>().unwrap() * 4
+    std::fs::read_to_string("/proc/self/statm")
+        .unwrap()
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+        * 4
 }
 
 /// F2-01: allocation sized from signer-controlled counts. The count checks
@@ -121,9 +150,17 @@ fn f2_01_layer_decode_memory_amplification() {
     a.extend(std::iter::repeat(0u8).take(n as usize * 4));
     a.extend_from_slice(&[0u8; 12]);
     let before = rss_kb();
-    let d = decode_a(&a).expect("decodes");
-    let grown_a = rss_kb() - before;
-    eprintln!("Layer A: payload {} KB -> resident +{} KB ({}x)", a.len() / 1024, grown_a, grown_a * 1024 / a.len() as u64);
+    // F2-01 fixed: the decode budget (2x payload) rejects the amplifying
+    // payload before allocating it.
+    let d = decode_a(&a);
+    assert!(d.is_none(), "an amplifying Layer A is rejected");
+    let grown_a = rss_kb().saturating_sub(before);
+    eprintln!(
+        "Layer A: payload {} KB -> resident +{} KB ({}x)",
+        a.len() / 1024,
+        grown_a,
+        grown_a * 1024 / a.len() as u64
+    );
     drop(d);
 
     let m = 3_000_000u32;
@@ -136,13 +173,19 @@ fn f2_01_layer_decode_memory_amplification() {
     }
     b.extend_from_slice(&0u32.to_le_bytes());
     let before = rss_kb();
-    let d = decode_b(&b).expect("decodes");
-    let grown_b = rss_kb() - before;
-    eprintln!("Layer B: payload {} KB -> resident +{} KB ({}x)", b.len() / 1024, grown_b, grown_b * 1024 / b.len() as u64);
+    let d = decode_b(&b);
+    assert!(d.is_none(), "an amplifying Layer B is rejected");
+    let grown_b = rss_kb().saturating_sub(before);
+    eprintln!(
+        "Layer B: payload {} KB -> resident +{} KB ({}x)",
+        b.len() / 1024,
+        grown_b,
+        grown_b * 1024 / b.len() as u64
+    );
     drop(d);
     assert!(
         grown_a * 1024 < 3 * a.len() as u64 && grown_b * 1024 < 3 * b.len() as u64,
-        "decode amplifies payload memory by more than 3x"
+        "decode grew resident memory by more than 3x the payload"
     );
 }
 
@@ -204,7 +247,9 @@ fn f2_11_ingest_total_overflows_on_32bit() {
     hdr.extend_from_slice(&(big as u32).to_le_bytes());
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ing.feed(&hdr)));
     eprintln!("32-bit ingest feed: {:?}", r.as_ref().map(|o| o.refused));
-    assert!(r.is_err(), "debug build: add overflow panic expected");
+    // F2-11 fixed: checked arithmetic; the oversized frame is refused cleanly.
+    let out = r.expect("no overflow panic");
+    assert_eq!(out.refused, Some(rvf_types::ErrorCode::StreamFrameSizeLie));
 }
 
 /// F2-02: a (signed) Layer A whose partition map covers `0..u64::MAX` makes
@@ -242,7 +287,13 @@ fn f2_02_hostile_partition_range_hangs_query() {
         vp.extend_from_slice(&x.to_le_bytes());
     }
     let mut body = write_segment_with_algo(0x02, &idx_payload, SegmentFlags::empty(), 1, 2);
-    body.extend(write_segment_with_algo(0x01, &vp, SegmentFlags::empty(), 2, 2));
+    body.extend(write_segment_with_algo(
+        0x01,
+        &vp,
+        SegmentFlags::empty(),
+        2,
+        2,
+    ));
     let key = SigningKey::from_bytes(&[0xA7; 32]);
     let pk = key.verifying_key().to_bytes();
     let b = StreamDescriptorBuilder::new([3; 16], key)
@@ -271,6 +322,10 @@ fn f2_02_hostile_partition_range_hangs_query() {
     let r = ing.query(&[1.0, 2.0, 3.0, 4.0], 1, 16);
     done.store(true, std::sync::atomic::Ordering::SeqCst);
     assert_eq!(r.envelope.results.len(), 1);
+    // F2-02 fixed: work is counted in lookups, not time. The hostile range
+    // costs at most one step per visible vector per probed centroid.
+    let steps = ing.vectors().range_steps();
+    assert!(steps <= 4 * ing.vectors().len() as u64 + 4, "steps {steps}");
 }
 
 /// F2-08: `stage_plan` (server startup path for any served body) does
@@ -278,7 +333,8 @@ fn f2_02_hostile_partition_range_hangs_query() {
 /// Debug: overflow panic. Release: see eprintln (wrap).
 #[test]
 fn f2_08_stage_plan_hostile_payload_length() {
-    let mut body = rvf_wire::writer::write_segment(0x01, &[0u8; 16], rvf_types::SegmentFlags::empty(), 1);
+    let mut body =
+        rvf_wire::writer::write_segment(0x01, &[0u8; 16], rvf_types::SegmentFlags::empty(), 1);
     body[0x10..0x18].copy_from_slice(&u64::MAX.to_le_bytes());
     let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let d2 = done.clone();
@@ -291,6 +347,9 @@ fn f2_08_stage_plan_hostile_payload_length() {
     });
     let r = std::panic::catch_unwind(|| rvf_runtime::progressive_stream::build::stage_plan(&body));
     done.store(true, std::sync::atomic::Ordering::SeqCst);
-    eprintln!("stage_plan on hostile length -> {:?}", r.as_ref().map(|v| v.len()));
+    eprintln!(
+        "stage_plan on hostile length -> {:?}",
+        r.as_ref().map(|v| v.len())
+    );
     assert!(r.is_ok(), "stage_plan panicked on a hostile payload_length");
 }

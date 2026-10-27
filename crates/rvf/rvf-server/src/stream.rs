@@ -14,6 +14,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::State;
@@ -45,6 +46,12 @@ pub struct StreamServerConfig {
     pub max_range_bytes: u64,
     /// Largest TCP stream reply payload, bytes.
     pub tcp_max_response: u32,
+    /// A stream that cannot hand over one buffered piece for this long (a
+    /// client that stopped reading) is aborted and its slot freed; also the
+    /// idle timeout for TCP stream connections.
+    pub idle_timeout: Duration,
+    /// Hard wall-clock limit for one body response.
+    pub total_deadline: Duration,
 }
 
 impl StreamServerConfig {
@@ -59,6 +66,8 @@ impl StreamServerConfig {
             max_concurrent_streams: 8,
             max_range_bytes: 256 << 20,
             tcp_max_response: 1 << 20,
+            idle_timeout: Duration::from_secs(30),
+            total_deadline: Duration::from_secs(3600),
         }
     }
 }
@@ -68,6 +77,7 @@ pub struct StreamServer {
     body: Arc<Vec<u8>>,
     plan: Arc<StreamPlan>,
     permits: Arc<Semaphore>,
+    tcp_permits: Arc<Semaphore>,
     cfg: StreamServerConfig,
 }
 
@@ -110,6 +120,7 @@ impl StreamServer {
         let plan = StreamPlan::new(bundle, &body);
         Ok(Arc::new(Self {
             permits: Arc::new(Semaphore::new(cfg.max_concurrent_streams.max(1))),
+            tcp_permits: Arc::new(Semaphore::new(cfg.max_concurrent_streams.max(1))),
             body: Arc::new(body),
             plan: Arc::new(plan),
             cfg,
@@ -141,7 +152,13 @@ impl StreamServer {
         out
     }
 
-    /// Take one stream permit (held until dropped), if any is free.
+    /// A permit from the TCP pool (separate from HTTP, so one transport's
+    /// silent clients cannot starve the other).
+    pub fn try_tcp_permit(&self) -> Option<OwnedSemaphorePermit> {
+        self.tcp_permits.clone().try_acquire_owned().ok()
+    }
+
+    /// Take one HTTP stream permit (held until dropped), if any is free.
     pub fn try_permit(&self) -> Option<OwnedSemaphorePermit> {
         self.permits.clone().try_acquire_owned().ok()
     }
@@ -220,28 +237,45 @@ async fn body(State(s): State<Arc<StreamServer>>, headers: HeaderMap) -> Respons
     };
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(4);
     let srv = s.clone();
-    let held = Arc::new(permit);
+    // The permit belongs to the producer: it is released when the response is
+    // finished, when the client goes away, or when the client stops reading
+    // for `idle_timeout` / the response exceeds `total_deadline`.
     tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let started = Instant::now();
+        let (idle, deadline) = (srv.cfg.idle_timeout, srv.cfg.total_deadline);
+        let send = |chunk: Vec<u8>| -> bool {
+            let mut item = Ok(Bytes::from(chunk));
+            let waiting = Instant::now();
+            loop {
+                match tx.try_send(item) {
+                    Ok(()) => return true,
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return false,
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(back)) => {
+                        if waiting.elapsed() > idle || started.elapsed() > deadline {
+                            return false;
+                        }
+                        item = back;
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                }
+            }
+        };
         let mut acc: Vec<u8> = Vec::with_capacity(128 << 10);
         let mut open = true;
         srv.plan.write_range(&srv.body, start, end, &mut |piece| {
             acc.extend_from_slice(piece);
             if acc.len() >= 64 << 10 {
-                open = tx
-                    .blocking_send(Ok(Bytes::from(std::mem::take(&mut acc))))
-                    .is_ok();
+                open = send(std::mem::take(&mut acc));
             }
             open
         });
         if open && !acc.is_empty() {
-            let _ = tx.blocking_send(Ok(Bytes::from(acc)));
+            let _ = send(acc);
         }
     });
-    // The permit lives as long as the response body: released when the body
-    // finishes or the connection (and so the stream) is dropped.
-    let stream = futures_util::stream::unfold((rx, held), |(mut rx, held)| async move {
-        rx.recv().await.map(|v| (v, (rx, held)))
-    });
+    let stream =
+        futures_util::stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|v| (v, rx)) });
     let mut h = HeaderMap::new();
     h.insert(
         header::CONTENT_TYPE,

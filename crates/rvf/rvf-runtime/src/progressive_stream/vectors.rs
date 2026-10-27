@@ -7,6 +7,7 @@ use std::collections::HashMap;
 /// byte of the record came from a released `VerifiedChunk`.
 #[derive(Default)]
 pub struct VerifiedVectors {
+    range_steps: std::sync::atomic::AtomicU64,
     dim: usize,
     slot: HashMap<u64, u32>,
     data: Vec<f32>,
@@ -39,6 +40,11 @@ impl VerifiedVectors {
     /// The vector dimension (0 until known).
     pub fn dimension_hint(&self) -> usize {
         self.dim
+    }
+
+    /// Lookups performed by range visits so far (regression-test counter).
+    pub fn range_steps(&self) -> u64 {
+        self.range_steps.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// True if `id` is visible.
@@ -79,6 +85,31 @@ impl VectorStore for VerifiedVectors {
 
     fn dimension(&self) -> usize {
         self.dim
+    }
+
+    /// Range visit bounded by the vectors present: a wide (or hostile) range
+    /// costs at most one step per visible vector.
+    fn for_each_in_range(&self, start: u64, end: u64, f: &mut dyn FnMut(u64, &[f32])) {
+        use std::sync::atomic::Ordering::Relaxed;
+        if end <= start {
+            return;
+        }
+        if ((end - start) as u128) <= self.slot.len() as u128 {
+            for id in start..end {
+                self.range_steps.fetch_add(1, Relaxed);
+                if let Some(v) = self.get_vector(id) {
+                    f(id, v);
+                }
+            }
+        } else {
+            for (&id, &s) in &self.slot {
+                self.range_steps.fetch_add(1, Relaxed);
+                if id >= start && id < end {
+                    let at = s as usize * self.dim;
+                    f(id, &self.data[at..at + self.dim]);
+                }
+            }
+        }
     }
 }
 

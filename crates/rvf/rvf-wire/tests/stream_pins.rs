@@ -240,3 +240,18 @@ fn finish_identity_reverifies_the_persisted_body_against_the_commitments() {
     assert_eq!(v.state(), StreamState::Complete);
     assert!(max_read <= 65536);
 }
+
+/// F2-09: the default table cap is derived from the default body limit, so a
+/// legitimate body at the limit (4 KiB chunks, the smallest) cannot exceed it.
+#[test]
+fn default_table_cap_covers_the_default_body_limit() {
+    use rvf_wire::stream::StreamPolicy;
+    let keys: [[u8; 32]; 0] = [];
+    let p = StreamPolicy::new(&keys);
+    let worst_tables = p.max_body_len / 4096 * 32;
+    assert!(
+        p.max_table_bytes >= worst_tables,
+        "{} < {worst_tables}",
+        p.max_table_bytes
+    );
+}

@@ -50,6 +50,9 @@ const OFF_IDENTITY: usize = 0xF00;
 pub const OFF_L1_CONTENT_HASH: usize = 0xFD0;
 /// Offset of the signer fingerprint (reserved area).
 pub const OFF_SIGNER_FINGERPRINT: usize = 0xFE0;
+/// Segment id of the L1 manifest segment (u64, signed). Zero in pages written
+/// before F2-06; verifiers then skip that one pin.
+pub const OFF_L1_SEGMENT_ID: usize = 0xFF0;
 const OFF_CHECKSUM: usize = 0xFFC;
 
 /// What a freshly written page commits to.
@@ -60,6 +63,8 @@ pub struct PageContent<'a> {
     pub l1_length: u64,
     /// SHAKE-256-128 of the MANIFEST payload.
     pub l1_content_hash: [u8; 16],
+    /// Segment id of the MANIFEST segment.
+    pub l1_segment_id: u64,
     /// Live vector count.
     pub total_vectors: u64,
     /// Vector dimension.
@@ -105,6 +110,8 @@ pub fn build_signed_page(content: &PageContent<'_>, secret: &[u8; 32]) -> [u8; P
     // created_ns / modified_ns stay zero: pages are reproducible.
     page[OFF_IDENTITY..OFF_IDENTITY + 68].copy_from_slice(&content.identity.to_bytes());
     page[OFF_L1_CONTENT_HASH..OFF_L1_CONTENT_HASH + 16].copy_from_slice(&content.l1_content_hash);
+    page[OFF_L1_SEGMENT_ID..OFF_L1_SEGMENT_ID + 8]
+        .copy_from_slice(&content.l1_segment_id.to_le_bytes());
 
     let public = Ed25519Keypair::from_secret(secret).public_key();
     page[OFF_SIGNER_FINGERPRINT..OFF_SIGNER_FINGERPRINT + 16]
@@ -146,6 +153,8 @@ pub struct PageView {
     pub l1_content_hash: [u8; 16],
     /// Claimed signer fingerprint.
     pub signer_fingerprint: [u8; 16],
+    /// Claimed manifest segment id (0 = not recorded).
+    pub l1_segment_id: u64,
 }
 
 /// Parse the fixed fields of a page. Verifies nothing cryptographic.
@@ -166,6 +175,7 @@ pub fn view(page: &[u8; PAGE_SIZE]) -> PageView {
         l1_length: u64_at(OFF_L1_LENGTH),
         l1_content_hash: l1h,
         signer_fingerprint: fp,
+        l1_segment_id: u64_at(OFF_L1_SEGMENT_ID),
     }
 }
 
@@ -208,6 +218,7 @@ mod tests {
             l1_offset: 4096,
             l1_length: 200,
             l1_content_hash: [9; 16],
+            l1_segment_id: 5,
             total_vectors: 7,
             dimension: 4,
             profile: 0,

@@ -15,7 +15,7 @@ use super::ingest::StreamIngest;
 use rvf_types::ErrorCode;
 use rvf_wire::stream::{StreamPolicy, StreamState};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -121,13 +121,25 @@ impl<'p, T: Transport> StreamClient<'p, T> {
     /// Append accepted frames to `path` (created/truncated to the consumer's
     /// current offset).
     pub fn with_log(mut self, path: &Path) -> io::Result<Self> {
-        let f = std::fs::OpenOptions::new()
+        let mut f = std::fs::OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
             .truncate(false)
             .open(path)?;
-        f.set_len(self.ingest.offset())?;
+        // The log must be exactly the consumer's stream prefix. Cut a longer
+        // log back to it and append from there; a shorter one cannot be
+        // extended (the missing bytes are not ours to invent).
+        let want = self.ingest.offset();
+        let have = f.metadata()?.len();
+        if have < want {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "frame log is shorter than the consumer's stream offset",
+            ));
+        }
+        f.set_len(want)?;
+        f.seek(SeekFrom::Start(want))?;
         self.log = Some(f);
         Ok(self)
     }
