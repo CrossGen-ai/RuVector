@@ -97,7 +97,7 @@ pub(crate) struct ScanHint {
 }
 
 fn align_up(x: u64) -> u64 {
-    (x + 63) & !63
+    x.saturating_add(63) & !63
 }
 
 fn header_at<R: Read + Seek>(r: &mut R, off: u64, len: u64) -> io::Result<Option<SegmentHeader>> {
@@ -132,7 +132,9 @@ fn mode_for_file<R: Read + Seek>(reader: &mut R, file_size: u64) -> io::Result<S
         let Some(h) = header_at(reader, off, file_size)? else {
             break;
         };
-        let unpadded = off.saturating_add(SEGMENT_HEADER_SIZE as u64 + h.payload_length);
+        let unpadded = off
+            .saturating_add(h.payload_length)
+            .saturating_add(SEGMENT_HEADER_SIZE as u64);
         let padded = align_up(unpadded);
         if unpadded == padded {
             off = unpadded;
