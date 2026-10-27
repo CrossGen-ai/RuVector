@@ -215,10 +215,35 @@ fn read_only_policy_open_cannot_write_and_signed_open_needs_a_signing_policy() {
 }
 
 #[test]
-fn plain_open_of_a_signed_file_cuts_the_page_on_write_and_the_file_is_then_unsigned() {
+fn plain_open_of_a_signed_file_refuses_to_write_unless_unsigning_is_allowed() {
     let d = tempfile::tempdir().unwrap();
     let p = signed_store(d.path());
+    let before = std::fs::read(&p).unwrap();
     let mut s = RvfStore::open(&p).unwrap(); // Permissive: no key, nothing verified
+    for r in [
+        s.ingest_batch(&[&[5.0, 5.0, 5.0, 5.0]], &[900], None)
+            .map(|_| ()),
+        s.delete(&[1]).map(|_| ()),
+        s.compact().map(|_| ()),
+    ] {
+        assert!(
+            matches!(r, Err(RvfError::Code(rvf_types::ErrorCode::ReadOnly))),
+            "{r:?}"
+        );
+    }
+    s.close().unwrap();
+    assert_eq!(
+        std::fs::read(&p).unwrap(),
+        before,
+        "refused writes leave the signed file untouched"
+    );
+    assert!(
+        RvfStore::open_with_policy(&p, opts(&[public(&SECRET)]), SecurityPolicy::Strict).is_ok()
+    );
+
+    // Explicit consent: the write succeeds and the file is unsigned afterwards.
+    let mut s = RvfStore::open(&p).unwrap();
+    s.allow_unsigning(true);
     s.ingest_batch(&[&[5.0, 5.0, 5.0, 5.0]], &[900], None)
         .unwrap();
     s.close().unwrap();
@@ -228,7 +253,6 @@ fn plain_open_of_a_signed_file_cuts_the_page_on_write_and_the_file_is_then_unsig
     assert!(!bytes
         .chunks(64)
         .any(|c| c[..4] == rvf_types::ROOT_MANIFEST_MAGIC.to_le_bytes()));
-    // Honest outcome: no longer acceptable under Strict, fine under Permissive.
     let e = security(open_err(&p, &[public(&SECRET)], SecurityPolicy::Strict));
     assert!(matches!(e, SecurityError::UnsignedManifest { .. }));
     assert_eq!(

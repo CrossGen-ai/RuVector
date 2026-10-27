@@ -34,6 +34,41 @@ use rvf_wire::hash::compute_shake256_128;
 
 use crate::root_page;
 
+/// What a signed manifest commits to for one directory segment. The hash
+/// covers the payload; the header fields are pinned to the directory entry
+/// (identity, type, length) or to the constants the writer always emits, so
+/// every header byte of a committed segment is authenticated (ADR-354, F-16).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Committed {
+    pub hash: [u8; 16],
+    pub seg_id: u64,
+    pub seg_type: u8,
+    pub payload_len: u64,
+}
+
+impl Committed {
+    /// True when `h` is exactly the header this writer would have produced.
+    pub(super) fn header_ok(&self, h: &rvf_types::SegmentHeader) -> bool {
+        let pad =
+            rvf_wire::writer::calculate_padded_size(SEGMENT_HEADER_SIZE, h.payload_length as usize)
+                - SEGMENT_HEADER_SIZE
+                - h.payload_length as usize;
+        h.checksum_algo == crate::hashing::ALGO_SHAKE256_128
+            && h.content_hash == self.hash
+            && h.segment_id == self.seg_id
+            && h.seg_type == self.seg_type
+            && h.payload_length == self.payload_len
+            && h.version == rvf_types::SEGMENT_VERSION
+            && h.flags == 0
+            && h.compression == 0
+            && h.reserved_0 == 0
+            && h.reserved_1 == 0
+            && h.uncompressed_len == 0
+            && h.timestamp_ns == 0
+            && h.alignment_pad as usize == pad
+    }
+}
+
 /// Manifest facts the signed page must be re-bound to at the next commit.
 #[derive(Clone, Copy)]
 pub(super) struct LastManifest {
@@ -53,10 +88,13 @@ pub(super) struct SecurityState {
     /// True while the file ends in a root page this store wrote or verified.
     pub root_page_present: AtomicBool,
     /// Committed content hash by segment offset, when enforcement is on.
-    pub committed: Option<HashMap<u64, [u8; 16]>>,
+    pub committed: Option<HashMap<u64, Committed>>,
     /// Set when any legacy-dialect byte layout or hash was encountered.
     pub legacy_dialect: AtomicBool,
     pub last_manifest: Option<LastManifest>,
+    /// Explicit consent for a handle that cannot re-sign to cut a valid
+    /// signed root page by writing (F-12). Default false.
+    pub allow_unsigning: bool,
 }
 
 impl SecurityState {
@@ -70,6 +108,7 @@ impl SecurityState {
             committed: None,
             legacy_dialect: AtomicBool::new(false),
             last_manifest: None,
+            allow_unsigning: false,
         }
     }
 
@@ -137,6 +176,13 @@ pub(super) fn read_trailing_page(file: &File) -> Option<[u8; root_page::PAGE_SIZ
     let mut page = [0u8; root_page::PAGE_SIZE];
     reader.read_exact(&mut page).ok()?;
     root_page::view(&page).magic_ok.then_some(page)
+}
+
+/// The manifest offset a CRC-valid trailing root page names, if any.
+pub(super) fn signed_page_manifest_offset(file: &File) -> Option<u64> {
+    let page = read_trailing_page(file)?;
+    let v = root_page::view(&page);
+    (v.crc_ok && v.sig_algo != 0).then_some(v.l1_offset)
 }
 
 /// The signature-level checks (steps 1-3 plus the dialect/trailer rules).

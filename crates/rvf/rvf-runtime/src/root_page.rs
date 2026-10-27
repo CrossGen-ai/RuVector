@@ -183,7 +183,14 @@ pub fn verify_signature(page: &[u8; PAGE_SIZE], public_key: &[u8; 32]) -> bool {
         }
         let mut sig = [0u8; ED25519_SIGNATURE_LEN];
         sig.copy_from_slice(&page[OFF_SIGNATURE..OFF_SIGNATURE + ED25519_SIGNATURE_LEN]);
-        rvf_types::ed25519::ed25519_verify(public_key, &signing_bytes(page), &sig)
+        // `verify_strict` (rejects small-order keys and non-canonical
+        // signatures), as the stream descriptor does.
+        use ed25519_dalek::{Signature, VerifyingKey};
+        let Ok(vk) = VerifyingKey::from_bytes(public_key) else {
+            return false;
+        };
+        vk.verify_strict(&signing_bytes(page), &Signature::from_bytes(&sig))
+            .is_ok()
     }
     #[cfg(not(feature = "ed25519"))]
     {

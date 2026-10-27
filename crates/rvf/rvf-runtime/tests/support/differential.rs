@@ -12,12 +12,11 @@
 //!      exactly `rvf_wire::find_latest_manifest(data)`.
 //!  I3  A byte-granular (legacy) hit is the newest byte-granular candidate
 //!      that parses, and is never older than the aligned answer.
-//!  I4  Byte-granular mode is used only when the first segment header says
-//!      legacy (`checksum_algo = 0`) or when the aligned scan saw no manifest
-//!      header at all.
+//!  I4  Byte-granular mode is used only when the layout probe says legacy
+//!      or when the aligned scan saw no manifest header at all.
 
 use rvf_runtime::read_path::{locate_manifest_in_bytes, manifest_payload_parses};
-use rvf_types::{SEGMENT_HEADER_SIZE, SEGMENT_MAGIC};
+use rvf_types::SEGMENT_HEADER_SIZE;
 use rvf_wire::tail_scan::{
     extent_fits, find_latest_manifest, manifest_candidates, split_root_page, ScanMode,
 };
@@ -42,10 +41,8 @@ fn candidates(data: &[u8], mode: ScanMode) -> Vec<(usize, u64)> {
 }
 
 fn first_header_is_legacy(data: &[u8]) -> bool {
-    data.len() >= SEGMENT_HEADER_SIZE
-        && data[..4] == SEGMENT_MAGIC.to_le_bytes()
-        && data[4] == 1
-        && data[0x20] == 0
+    // The runtime's own layout probe (not one unauthenticated byte).
+    rvf_runtime::read_path::scan_is_legacy_for_bytes(data)
 }
 
 pub fn check(data: &[u8]) -> Result<Option<(u64, bool)>, String> {
@@ -61,7 +58,16 @@ pub fn check(data: &[u8]) -> Result<Option<(u64, bool)>, String> {
         .filter(|(o, p)| parseable(data, *o, *p))
         .collect();
 
+    // The runtime parses at most 256 candidates per open (F-03). If that many
+    // unparseable aligned candidates precede the first parseable one, giving
+    // up is the specified behaviour, not a disagreement.
+    let past_budget = |all: &[(usize, u64)]| {
+        all.iter()
+            .position(|(o, p)| parseable(data, *o, *p))
+            .is_some_and(|i| i >= 256)
+    };
     match got {
+        None if !first_header_is_legacy(data) && past_budget(&aligned) => Ok(None),
         None => {
             // Nothing found: no parseable candidate may exist in the mode used.
             if first_header_is_legacy(data) {
