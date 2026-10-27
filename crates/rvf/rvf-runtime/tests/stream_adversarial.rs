@@ -293,3 +293,46 @@ fn authentic_duplicates_never_double_apply_and_floods_poison() {
     );
     assert!(c.ingest.vectors().is_empty() && !c.ingest.layers().layer_a);
 }
+
+/// RV2-02: `sealed` is a derived release and re-checks the epoch pin: a session
+/// superseded after completion stops claiming `sealed = true`.
+#[test]
+fn sealed_requires_the_pin_to_still_hold() {
+    use rvf_wire::stream::{MemoryPinStore, PinStore};
+    let f = fixture_with(2600, 16, 8, 11, 1);
+    let keys = [f.public];
+    let store = MemoryPinStore::new();
+    let mut policy = StreamPolicy::new(&keys);
+    policy.pins = Some(&store);
+    let (_end, mut c) = run_mirror(&f, frames(&f).concat(), policy);
+    assert_eq!(c.ingest.state(), StreamState::CompleteUnverified);
+    let body = f.body.clone();
+    c.ingest
+        .finish_identity(|o, b| {
+            b.copy_from_slice(&body[o as usize..o as usize + b.len()]);
+            true
+        })
+        .unwrap();
+    let q = f.ds.vector(0).to_vec();
+    assert!(c.ingest.query(&q, 3, 16).sealed);
+    let d = c.ingest.verifier().descriptor().unwrap().clone();
+    store
+        .advance(
+            &d.header.signer_key_id,
+            &d.header.file_id,
+            None,
+            EpochPin {
+                epoch: d.header.epoch + 1,
+                descriptor_hash: [7; 32],
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        c.ingest.recheck_pin(&store),
+        Err(ErrorCode::StreamStaleEpoch)
+    );
+    assert!(
+        !c.ingest.query(&q, 3, 16).sealed,
+        "superseded session must not be sealed"
+    );
+}

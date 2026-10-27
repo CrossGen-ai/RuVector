@@ -88,9 +88,12 @@ fn finish_identity_over_persisted_body() {
             buf.copy_from_slice(&bad[o as usize..o as usize + buf.len()]);
             true
         }),
-        Err(E::StreamIdentityMismatch)
+        Err(E::StreamChunkHashMismatch)
     );
-    assert_eq!(v2.state(), StreamState::Poisoned(E::StreamIdentityMismatch));
+    assert_eq!(
+        v2.state(),
+        StreamState::Poisoned(E::StreamChunkHashMismatch)
+    );
     assert_eq!(
         v.finish_identity(|o, buf| {
             buf.copy_from_slice(&body[o as usize..o as usize + buf.len()]);

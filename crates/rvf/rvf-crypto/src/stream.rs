@@ -59,6 +59,40 @@ pub fn leaf_hash(file_id: &[u8; 16], seg_id: u64, chunk_index: u32, bytes: &[u8]
     h.finalize()
 }
 
+/// Incremental form of [`leaf_hash`] for chunks read in pieces (bounded memory).
+#[derive(Clone)]
+pub struct LeafHasher {
+    h: Sha256,
+    expected: u64,
+    seen: u64,
+}
+
+impl LeafHasher {
+    /// Start a leaf for a chunk of exactly `chunk_len` bytes.
+    pub fn new(file_id: &[u8; 16], seg_id: u64, chunk_index: u32, chunk_len: u64) -> Self {
+        let mut h = Sha256::new();
+        h.update(&[LEAF_TAG]);
+        h.update(file_id);
+        h.update(&seg_id.to_le_bytes());
+        h.update(&chunk_index.to_le_bytes());
+        h.update(&chunk_len.to_le_bytes());
+        Self {
+            h,
+            expected: chunk_len,
+            seen: 0,
+        }
+    }
+    /// Absorb the next piece of the chunk.
+    pub fn update(&mut self, bytes: &[u8]) {
+        self.seen = self.seen.saturating_add(bytes.len() as u64);
+        self.h.update(bytes);
+    }
+    /// Finish; `None` if fewer or more bytes than `chunk_len` were absorbed.
+    pub fn finalize(self) -> Option<[u8; 32]> {
+        (self.seen == self.expected).then(|| self.h.finalize())
+    }
+}
+
 /// `SHA-256(0x01 || file_id || seg_id u64 || n u32 || leaf_0 || ... || leaf_{n-1})`.
 pub fn chunk_list_hash(file_id: &[u8; 16], seg_id: u64, leaves: &[[u8; 32]]) -> [u8; 32] {
     let mut h = Sha256::new();

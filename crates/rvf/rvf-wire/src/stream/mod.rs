@@ -12,6 +12,7 @@
 mod builder;
 mod descriptor;
 mod frame;
+mod pin;
 mod verifier;
 
 pub use builder::{FrameIter, StreamBundle, StreamDescriptorBuilder, ROOT_PAGE_SEG_ID};
@@ -20,6 +21,7 @@ pub use frame::{
     chunk_frame, descriptor_frame, table_frame, FrameReader, FRAME_CHUNK, FRAME_CHUNK_TABLE,
     FRAME_DESCRIPTOR,
 };
+pub use pin::{MemoryPinStore, PinConflict, PinStore};
 pub use verifier::{Event, IdentityStatus, StreamState, StreamVerifier, VerifiedChunk};
 
 use rvf_types::stream::StreamClass;
@@ -57,6 +59,9 @@ pub struct StreamPolicy<'a> {
     pub trusted_keys: &'a [[u8; 32]],
     /// Epoch pin lookup by `file_id`.
     pub epoch_pin: Option<&'a EpochPinFn<'a>>,
+    /// Shared pin store: read at admission, re-checked at completion, and the
+    /// target of `commit_pin`. Used in addition to `epoch_pin`.
+    pub pins: Option<&'a dyn PinStore>,
     /// Trusted clock (ns), enforced only when set.
     pub now_ns: Option<u64>,
     /// Expected `policy_hash`, enforced only when set.
@@ -84,6 +89,7 @@ impl<'a> StreamPolicy<'a> {
             max_class_bytes: [1 << 40; StreamClass::COUNT],
             trusted_keys,
             epoch_pin: None,
+            pins: None,
             now_ns: None,
             expected_policy_hash: None,
             fault_budget: 4,
