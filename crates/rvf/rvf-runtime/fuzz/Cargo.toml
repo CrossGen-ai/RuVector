@@ -17,6 +17,11 @@ libfuzzer-sys = "0.4"
 rvf-runtime = { path = ".." }
 rvf-types = { path = "../../rvf-types", features = ["std"] }
 rvf-wire = { path = "../../rvf-wire" }
+rvf-server = { path = "../../rvf-server" }
+ed25519-dalek = "2"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
 
 # Prevent this from being discovered as a workspace member
 [workspace]
@@ -24,6 +29,20 @@ rvf-wire = { path = "../../rvf-wire" }
 [[bin]]
 name = "tail_scan_differential"
 path = "fuzz_targets/tail_scan_differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream_ingest_feed"
+path = "fuzz_targets/stream_ingest_feed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "server_stream_frames"
+path = "fuzz_targets/server_stream_frames.rs"
 test = false
 doc = false
 bench = false
