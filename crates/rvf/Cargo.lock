@@ -1862,6 +1862,7 @@ version = "0.5.0"
 dependencies = [
  "crc32fast",
  "ed25519-dalek",
+ "libc",
  "log",
  "rand",
  "rvf-index",

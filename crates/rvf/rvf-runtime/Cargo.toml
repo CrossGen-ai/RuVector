@@ -34,3 +34,6 @@ rand = "0.8"
 [[example]]
 name = "qr_seed_encode"
 required-features = ["qr"]
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
