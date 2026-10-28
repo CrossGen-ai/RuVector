@@ -116,7 +116,10 @@ fn every_cut_is_an_error_or_a_whole_generation() {
             Err(_) => rejected += 1,
         }
     }
-    assert!(rejected > 0 && opened > 0, "opened {opened}, rejected {rejected}");
+    assert!(
+        rejected > 0 && opened > 0,
+        "opened {opened}, rejected {rejected}"
+    );
 }
 
 /// A file in a segment-format version this reader does not support is

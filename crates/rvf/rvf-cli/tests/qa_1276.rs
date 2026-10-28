@@ -30,11 +30,15 @@ fn vectors_json(dir: &Path, n: usize, dim: usize) {
 
 fn setup(n: usize) -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
-    assert!(rvf(&["create", "-d", "4", "s.rvf"], d.path()).status.success());
-    vectors_json(d.path(), n, 4);
-    assert!(rvf(&["ingest", "-i", "v.json", "-b", "100", "s.rvf"], d.path())
+    assert!(rvf(&["create", "-d", "4", "s.rvf"], d.path())
         .status
         .success());
+    vectors_json(d.path(), n, 4);
+    assert!(
+        rvf(&["ingest", "-i", "v.json", "-b", "100", "s.rvf"], d.path())
+            .status
+            .success()
+    );
     d
 }
 

@@ -36,4 +36,8 @@ pub use stream::{
 };
 #[cfg(feature = "ed25519")]
 pub use stream::{sign_descriptor, verify_descriptor};
-pub use witness::{create_witness_chain, verify_witness_chain, WitnessEntry};
+pub use witness::{
+    chain_entry_hash, classify_witness_payload, create_witness_chain, encode_chain_entry,
+    parse_legacy_witness_record, verify_witness_chain, verify_witness_chain_from,
+    LegacyWitnessRecord, WitnessEntry, WitnessPayloadKind, WITNESS_ENTRY_SIZE,
+};

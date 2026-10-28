@@ -62,7 +62,11 @@ pub fn rss_kb() -> Option<u64> {
         // statm field 1 is resident pages; assume 4 KiB pages like the
         // original tests did, falling back to getrusage if unreadable.
         if let Ok(s) = std::fs::read_to_string("/proc/self/statm") {
-            if let Some(p) = s.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()) {
+            if let Some(p) = s
+                .split_whitespace()
+                .nth(1)
+                .and_then(|v| v.parse::<u64>().ok())
+            {
                 return Some(p * 4);
             }
         }

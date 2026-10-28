@@ -1945,8 +1945,8 @@ impl RvfStore {
         self.seg_writer = Some(seg_writer);
         self.last_compaction_time = now_secs();
 
-        // Reset witness chain after compaction (the file has been rewritten).
-        self.last_witness_hash = [0u8; 32];
+        // The witness chain is NOT reset: compaction preserves the existing
+        // WITNESS_SEGs in order, so the new entry continues the same chain.
 
         // Append a witness entry recording this compact operation.
         let mut sealed = false;
@@ -3243,8 +3243,8 @@ impl RvfStore {
     /// `witness_type` is one of the `witness_types::*` constants.
     /// `action` is a human-readable action description encoded as bytes.
     ///
-    /// The witness entry is chain-linked to the previous witness via
-    /// `last_witness_hash` using `simple_shake256_256`.
+    /// The witness entry is a fixed 73-byte chain entry linked to the previous one via
+    /// `last_witness_hash` (SHAKE-256), verifiable by `rvf_crypto::verify_witness_chain`.
     fn append_witness(&mut self, witness_type: u8, action: &[u8]) -> Result<(), RvfError> {
         let writer = self
             .seg_writer
@@ -3276,20 +3276,19 @@ impl RvfStore {
         };
 
         // Compute the payload length for the segment directory.
-        let payload_len = (1 + 8 + 4 + action.len() + 32) as u64;
+        let payload_len = rvf_crypto::WITNESS_ENTRY_SIZE as u64;
         self.segment_dir
             .push((seg_id, seg_offset, payload_len, SegmentType::Witness as u8));
 
-        // Build the serialized witness entry bytes and hash them to update
-        // the chain. This mirrors the payload layout exactly so that
-        // external verifiers can reconstruct the chain from raw segments.
-        let mut entry_bytes = Vec::with_capacity(1 + 8 + 4 + action.len() + 32);
-        entry_bytes.push(witness_type);
-        entry_bytes.extend_from_slice(&timestamp_ns.to_le_bytes());
-        entry_bytes.extend_from_slice(&(action.len() as u32).to_le_bytes());
-        entry_bytes.extend_from_slice(action);
-        entry_bytes.extend_from_slice(&self.last_witness_hash);
-        self.last_witness_hash = simple_shake256_256(&entry_bytes);
+        // Advance the chain head: SHAKE-256 of the exact 73-byte entry just
+        // written, which is what the next entry must carry as `prev_hash`.
+        let entry_bytes = rvf_crypto::encode_chain_entry(
+            &self.last_witness_hash,
+            action,
+            timestamp_ns,
+            witness_type,
+        );
+        self.last_witness_hash = rvf_crypto::chain_entry_hash(&entry_bytes);
 
         Ok(())
     }
@@ -3446,6 +3445,8 @@ impl RvfStore {
             }
         }
 
+        self.restore_witness_head();
+
         if !self.read_only {
             let max_seg_id = self
                 .segment_dir
@@ -3460,6 +3461,34 @@ impl RvfStore {
         self.verify_all_segments()?;
 
         Ok(())
+    }
+
+    /// Continue the witness hash chain across reopen: the head is the hash of
+    /// the newest WITNESS_SEG's last chain entry. If the newest witness is a
+    /// pre-0.5 legacy record, unreadable, or absent, the chain restarts from
+    /// genesis (zero) -- `rvf verify-witness` treats a legacy record as such a
+    /// restart point.
+    fn restore_witness_head(&mut self) {
+        self.last_witness_hash = [0u8; 32];
+        let Some((_, offset, _, _)) = self
+            .segment_dir
+            .iter()
+            .rev()
+            .find(|&&(_, _, _, t)| t == SegmentType::Witness as u8)
+            .copied()
+        else {
+            return;
+        };
+        let mut reader = BufReader::new(&self.file);
+        let Ok((_, payload)) = self.read_seg(&mut reader, offset) else {
+            return;
+        };
+        if rvf_crypto::classify_witness_payload(&payload) == rvf_crypto::WitnessPayloadKind::Chain
+            && payload.len() >= rvf_crypto::WITNESS_ENTRY_SIZE
+        {
+            let last = &payload[payload.len() - rvf_crypto::WITNESS_ENTRY_SIZE..];
+            self.last_witness_hash = rvf_crypto::chain_entry_hash(last);
+        }
     }
 
     fn restore_cow_state(&mut self, ancestry: &mut HashSet<PathBuf>) -> Result<(), RvfError> {

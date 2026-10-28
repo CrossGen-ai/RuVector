@@ -305,7 +305,10 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
             .saturating_add(h.payload_length);
         if payload_end > end {
             return Ok(if complete > 0 {
-                TailState::Truncated { complete, torn_at: pos }
+                TailState::Truncated {
+                    complete,
+                    torn_at: pos,
+                }
             } else {
                 TailState::Recoverable
             });
