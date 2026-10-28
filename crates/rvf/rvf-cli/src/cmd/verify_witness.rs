@@ -104,7 +104,7 @@ fn looks_like_attestation(p: &[u8]) -> bool {
         && count < 10_000
         && p.len()
             >= 4usize.saturating_add(count.saturating_mul(8 + rvf_crypto::WITNESS_ENTRY_SIZE))
-        && p.len() % rvf_crypto::WITNESS_ENTRY_SIZE != 0
+        && !p.len().is_multiple_of(rvf_crypto::WITNESS_ENTRY_SIZE)
 }
 
 /// Format a nanosecond timestamp as a human-readable UTC string.

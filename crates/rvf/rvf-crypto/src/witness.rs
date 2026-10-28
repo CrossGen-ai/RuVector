@@ -150,7 +150,7 @@ pub fn parse_legacy_witness_record(p: &[u8]) -> Option<LegacyWitnessRecord> {
 /// A genuine legacy record that happens to be 73k bytes long is therefore
 /// reported as a failed chain, which is the safe direction.
 pub fn classify_witness_payload(p: &[u8]) -> WitnessPayloadKind {
-    if p.is_empty() || p.len() % ENTRY_SIZE == 0 {
+    if p.is_empty() || p.len().is_multiple_of(ENTRY_SIZE) {
         WitnessPayloadKind::Chain
     } else if parse_legacy_witness_record(p).is_some() {
         WitnessPayloadKind::Legacy
