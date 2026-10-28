@@ -571,7 +571,6 @@ impl RvfStore {
         let old_chain = self.metadata_chain;
         let old_directory = self.segment_dir.clone();
         let old_epoch = self.epoch;
-        let old_witness_hash = self.last_witness_hash;
 
         let candidate_metadata = self.build_ingest_metadata(&metadata, &valid_ids)?;
         let has_metadata = !matches!(metadata, IngestMetadata::None);
@@ -684,7 +683,6 @@ impl RvfStore {
                 self.metadata_chain = old_chain;
                 self.segment_dir = old_directory;
                 self.epoch = old_epoch;
-                self.last_witness_hash = old_witness_hash;
                 *self.index.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 *self.rabitq.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 return Err(error);
@@ -697,7 +695,6 @@ impl RvfStore {
             self.metadata_chain = old_chain;
             self.segment_dir = old_directory;
             self.epoch = old_epoch;
-            self.last_witness_hash = old_witness_hash;
             *self.index.lock().unwrap_or_else(|e| e.into_inner()) = None;
             *self.rabitq.lock().unwrap_or_else(|e| e.into_inner()) = None;
             return Err(error);
@@ -1558,7 +1555,6 @@ impl RvfStore {
         let old_deletion_bitmap = self.deletion_bitmap.clone();
         let old_membership_filter = self.membership_filter.clone();
         let old_epoch = self.epoch;
-        let old_witness_hash = self.last_witness_hash;
 
         let mut deleted = 0u64;
         for &id in ids {
@@ -1605,7 +1601,6 @@ impl RvfStore {
             self.deletion_bitmap = old_deletion_bitmap;
             self.membership_filter = old_membership_filter;
             self.epoch = old_epoch;
-            self.last_witness_hash = old_witness_hash;
             return Err(error);
         }
         self.commit_metadata_state();
@@ -3273,6 +3268,10 @@ impl RvfStore {
     ///
     /// The witness entry is a fixed 73-byte chain entry linked to the previous one via
     /// `last_witness_hash` (SHAKE-256), verifiable by `rvf_crypto::verify_witness_chain`.
+    ///
+    /// The head follows the FILE, which is append-only: a failed later step of
+    /// the same operation (manifest write) does not remove the witness segment,
+    /// so callers must not roll `last_witness_hash` back.
     fn append_witness(&mut self, witness_type: u8, action: &[u8]) -> Result<(), RvfError> {
         let writer = self
             .seg_writer
@@ -3366,10 +3365,11 @@ impl RvfStore {
         // Record what lies after the manifest we are about to serve (#1276):
         // a torn append recovers to this snapshot (ADR-280), but so does a
         // truncated file, so make the discarded tail visible.
-        self.tail_recovery = {
+        let (tail_recovery, tail_witness) = {
             let mut reader = BufReader::new(&self.file);
             read_path::inspect_tail(&mut reader, &located).unwrap_or_default()
         };
+        self.tail_recovery = tail_recovery;
         if let Some(at) = self.tail_recovery.torn_at {
             log::warn!(
                 "rvf: {} ends inside a segment (offset {at}); serving the last committed \
@@ -3472,7 +3472,7 @@ impl RvfStore {
             }
         }
 
-        self.restore_witness_head();
+        self.restore_witness_head(tail_witness);
 
         if !self.read_only {
             let max_seg_id = self
@@ -3495,15 +3495,19 @@ impl RvfStore {
     /// pre-0.5 legacy record, unreadable, or absent, the chain restarts from
     /// genesis (zero) -- `rvf verify-witness` treats a legacy record as such a
     /// restart point.
-    fn restore_witness_head(&mut self) {
+    fn restore_witness_head(&mut self, tail_witness: Option<u64>) {
         self.last_witness_hash = [0u8; 32];
-        let Some((_, offset, _, _)) = self
+        // The head is the newest witness in FILE order. A witness appended
+        // after the last manifest (an unsigned audited query, or a commit whose
+        // manifest was lost) is not listed in the segment directory but is in
+        // the file, and the verifier walks the file.
+        let listed = self
             .segment_dir
             .iter()
             .rev()
             .find(|&&(_, _, _, t)| t == SegmentType::Witness as u8)
-            .copied()
-        else {
+            .map(|&(_, off, _, _)| off);
+        let Some(offset) = tail_witness.or(listed) else {
             return;
         };
         let mut reader = BufReader::new(&self.file);

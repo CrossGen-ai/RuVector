@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-ebpf"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "rvf-types",
  "sha3",
@@ -1809,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-kernel"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "flate2",
  "rvf-types",
@@ -1819,7 +1819,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-launch"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rvf-runtime",
  "rvf-types",

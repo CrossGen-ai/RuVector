@@ -9112,7 +9112,7 @@ dependencies = [
 
 [[package]]
 name = "ruvector-agent-memory"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ed25519-dalek",
  "rand 0.8.6",
@@ -10904,7 +10904,7 @@ dependencies = [
 
 [[package]]
 name = "ruvector-robotics"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "criterion 0.5.1",
  "rand 0.8.6",
@@ -11297,7 +11297,7 @@ version = "2.3.0"
 
 [[package]]
 name = "ruvector-staged-workspace"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvf-types",
  "serde",
@@ -12166,7 +12166,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-crypto"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ed25519-dalek",
  "rvf-types",
@@ -12176,7 +12176,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-ebpf"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rvf-types",
  "sha3",
@@ -12216,7 +12216,7 @@ version = "0.2.1"
 
 [[package]]
 name = "rvf-kernel"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "flate2",
  "rvf-types",
@@ -12243,18 +12243,19 @@ dependencies = [
 
 [[package]]
 name = "rvf-quant"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rvf-types",
 ]
 
 [[package]]
 name = "rvf-runtime"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "ed25519-dalek",
  "log",
+ "rvf-crypto",
  "rvf-index",
  "rvf-quant",
  "rvf-types",
@@ -12263,7 +12264,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-types"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "ed25519-dalek",
  "rand_core 0.6.4",
@@ -12271,7 +12272,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-wire"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "crc32c",
  "ed25519-dalek",

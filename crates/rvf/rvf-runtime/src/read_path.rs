@@ -254,7 +254,7 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
 pub(crate) fn inspect_tail<R: Read + Seek>(
     reader: &mut R,
     located: &LocatedManifest,
-) -> io::Result<crate::options::TailRecovery> {
+) -> io::Result<(crate::options::TailRecovery, Option<u64>)> {
     let file_size = reader.seek(SeekFrom::End(0))?;
     let end = body_end(reader, file_size)?;
     let step = |off: u64, h: &SegmentHeader| {
@@ -273,6 +273,7 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
         ..Default::default()
     };
     let mut pos = manifest_end;
+    let mut last_witness: Option<u64> = None;
     // Bound the walk: a hostile tail of tiny segments must not cost O(file).
     for _ in 0..4096 {
         if pos >= end {
@@ -304,9 +305,12 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
         if h.seg_type != rvf_types::SegmentType::Manifest as u8 {
             info.uncommitted_segments += 1;
         }
+        if h.seg_type == rvf_types::SegmentType::Witness as u8 {
+            last_witness = Some(pos);
+        }
         pos = step(pos, &h);
     }
-    Ok(info)
+    Ok((info, last_witness))
 }
 
 /// If the file starts with a segment header carrying our magic but a segment

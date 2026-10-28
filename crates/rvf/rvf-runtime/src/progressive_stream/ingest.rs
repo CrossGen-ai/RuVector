@@ -42,6 +42,7 @@ const DEFAULT_BUFFER_BUDGET: u64 = 256 << 20;
 
 /// Audit record of a state change (the RVM witness chain consumes these).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum StreamWitness {
     /// Descriptor accepted.
     DescriptorVerified([u8; 32]),
@@ -105,6 +106,7 @@ pub struct StreamAnswer {
 
 /// How a query was answered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum QueryPath {
     /// Nothing to search yet.
     Empty,
@@ -407,6 +409,11 @@ impl<'p> StreamIngest<'p> {
                 if let Some(st) = complete {
                     self.witness(StreamWitness::Complete(st));
                 }
+            }
+            // `Event` is `#[non_exhaustive]`: an event this build does not know how
+            // to apply must not be skipped silently. Fail closed.
+            _ => {
+                self.verifier.poison(ErrorCode::StreamUnexpectedFrame);
             }
         }
     }
