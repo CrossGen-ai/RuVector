@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-crypto"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ed25519-dalek",
  "rand",
@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-ebpf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvf-types",
  "sha3",
@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-import"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "csv",
@@ -1808,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-kernel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flate2",
  "rvf-types",
@@ -1818,7 +1818,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-launch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rvf-runtime",
  "rvf-types",
@@ -1829,7 +1829,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-manifest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crc32c",
  "rvf-types",
@@ -1849,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-quant"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "approx",
  "rand",
@@ -1858,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-runtime"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "ed25519-dalek",
@@ -1873,7 +1873,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "axum-test",
@@ -1909,7 +1909,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-types"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "ed25519-dalek",
  "rand_core",
@@ -1927,7 +1927,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-wire"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "crc32c",
  "ed25519-dalek",

@@ -5,9 +5,13 @@
 
 /// Wire-format error code (u16). The high byte is the category, the low byte is
 /// the specific error within that category.
+///
+/// This enum is `#[non_exhaustive]`: new codes may be added in minor releases,
+/// so downstream `match`es must include a wildcard arm (fail closed).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum ErrorCode {
     // ---- Category 0x00: Success ----
     /// Operation succeeded.
