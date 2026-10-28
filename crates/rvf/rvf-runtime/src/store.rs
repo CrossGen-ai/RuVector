@@ -164,6 +164,8 @@ pub struct RvfStore {
     /// Generations dropped by open because the chain could not be replayed
     /// past them (see [`Self::metadata_recovery`]).
     dropped_metadata_generations: u64,
+    /// Evidence about bytes ignored after the served manifest (#1276).
+    tail_recovery: TailRecovery,
     /// Records the truncated replay resurrected and open therefore discarded.
     dropped_metadata_records: u64,
     /// `META_SEG` offsets a truncated replay could not reach. They are dropped
@@ -277,6 +279,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: EmbeddingCompatibility::Unchecked,
@@ -365,6 +368,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: EmbeddingCompatibility::Unchecked,
@@ -451,6 +455,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: EmbeddingCompatibility::Unchecked,
@@ -531,7 +536,9 @@ impl RvfStore {
         let mut valid_ids: Vec<u64> = Vec::with_capacity(ids.len());
 
         for (i, &vec_data) in vectors.iter().enumerate() {
-            if vec_data.len() != dim {
+            // Non-finite components poison every distance: reject the row
+            // like a dimension mismatch (#1276 review).
+            if vec_data.len() != dim || vec_data.iter().any(|x| !x.is_finite()) {
                 rejected += 1;
                 continue;
             }
@@ -541,7 +548,8 @@ impl RvfStore {
         }
 
         if valid_vectors.is_empty() {
-            self.epoch += 1;
+            // Nothing was accepted, so nothing was written: the epoch must not
+            // advance (#1276 item 4).
             return Ok(IngestResult {
                 accepted: 0,
                 rejected,
@@ -565,7 +573,6 @@ impl RvfStore {
         let old_chain = self.metadata_chain;
         let old_directory = self.segment_dir.clone();
         let old_epoch = self.epoch;
-        let old_witness_hash = self.last_witness_hash;
 
         let candidate_metadata = self.build_ingest_metadata(&metadata, &valid_ids)?;
         let has_metadata = !matches!(metadata, IngestMetadata::None);
@@ -678,7 +685,6 @@ impl RvfStore {
                 self.metadata_chain = old_chain;
                 self.segment_dir = old_directory;
                 self.epoch = old_epoch;
-                self.last_witness_hash = old_witness_hash;
                 *self.index.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 *self.rabitq.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 return Err(error);
@@ -691,7 +697,6 @@ impl RvfStore {
             self.metadata_chain = old_chain;
             self.segment_dir = old_directory;
             self.epoch = old_epoch;
-            self.last_witness_hash = old_witness_hash;
             *self.index.lock().unwrap_or_else(|e| e.into_inner()) = None;
             *self.rabitq.lock().unwrap_or_else(|e| e.into_inner()) = None;
             return Err(error);
@@ -722,8 +727,33 @@ impl RvfStore {
         options: &QueryOptions,
     ) -> Result<Vec<SearchResult>, RvfError> {
         let (mut results, _) = self.query_routed(vector, k, options)?;
+        Self::check_results_finite(&results)?;
         self.attach_metadata(&mut results, options);
         Ok(results)
+    }
+
+    /// A finite query can still overflow (e.g. components near `f32::MAX`) so
+    /// that distances are inf/NaN and cannot be ranked; refuse rather than
+    /// return an arbitrary order. (Also guards stores that already hold
+    /// non-finite vectors ingested before ingest rejected them.)
+    fn check_results_finite(results: &[SearchResult]) -> Result<(), RvfError> {
+        if results.iter().any(|r| !r.distance.is_finite()) {
+            return Err(err(ErrorCode::NonFiniteQuery));
+        }
+        Ok(())
+    }
+
+    /// Validate a query vector at the API boundary: right dimension, and every
+    /// component finite. NaN or infinite components make every distance NaN
+    /// (or infinite) and used to be returned as ordinary results (#1276).
+    fn check_query_vector(&self, vector: &[f32]) -> Result<(), RvfError> {
+        if vector.len() != self.options.dimension as usize {
+            return Err(err(ErrorCode::DimensionMismatch));
+        }
+        if vector.iter().any(|x| !x.is_finite()) {
+            return Err(err(ErrorCode::NonFiniteQuery));
+        }
+        Ok(())
     }
 
     /// Populate [`SearchResult::metadata`] on each hit when the query opted
@@ -752,10 +782,7 @@ impl RvfStore {
         k: usize,
         options: &QueryOptions,
     ) -> Result<(Vec<SearchResult>, bool), RvfError> {
-        let dim = self.options.dimension as usize;
-        if vector.len() != dim {
-            return Err(err(ErrorCode::DimensionMismatch));
-        }
+        self.check_query_vector(vector)?;
 
         // COW children may have zero child-side vectors but still need parent
         // read-through; only skip early for non-COW empty stores.
@@ -1336,10 +1363,7 @@ impl RvfStore {
         use std::time::Instant;
 
         let start = Instant::now();
-        let dim = self.options.dimension as usize;
-        if vector.len() != dim {
-            return Err(err(ErrorCode::DimensionMismatch));
-        }
+        self.check_query_vector(vector)?;
 
         // Determine effective budget based on quality preference.
         let budget = match options.quality_preference {
@@ -1350,6 +1374,7 @@ impl RvfStore {
 
         // Execute the base query, tracking whether the HNSW index served it.
         let (results, index_used) = self.query_routed(vector, k, options)?;
+        Self::check_results_finite(&results)?;
         let hnsw_candidate_count = results.len() as u32;
 
         // Determine if safety net should activate.
@@ -1545,7 +1570,6 @@ impl RvfStore {
         let old_deletion_bitmap = self.deletion_bitmap.clone();
         let old_membership_filter = self.membership_filter.clone();
         let old_epoch = self.epoch;
-        let old_witness_hash = self.last_witness_hash;
 
         let mut deleted = 0u64;
         for &id in ids {
@@ -1592,7 +1616,6 @@ impl RvfStore {
             self.deletion_bitmap = old_deletion_bitmap;
             self.membership_filter = old_membership_filter;
             self.epoch = old_epoch;
-            self.last_witness_hash = old_witness_hash;
             return Err(error);
         }
         self.commit_metadata_state();
@@ -1937,8 +1960,8 @@ impl RvfStore {
         self.seg_writer = Some(seg_writer);
         self.last_compaction_time = now_secs();
 
-        // Reset witness chain after compaction (the file has been rewritten).
-        self.last_witness_hash = [0u8; 32];
+        // The witness chain is NOT reset: compaction preserves the existing
+        // WITNESS_SEGs in order, so the new entry continues the same chain.
 
         // Append a witness entry recording this compact operation.
         let mut sealed = false;
@@ -2793,6 +2816,28 @@ impl RvfStore {
         }
     }
 
+    /// What `open` ignored after the manifest it served. `is_torn()` means the
+    /// file ends inside a segment: a crashed append (recovered, by design) or a
+    /// truncated/partially downloaded file (indistinguishable from the bytes).
+    pub fn tail_recovery(&self) -> TailRecovery {
+        self.tail_recovery
+    }
+
+    /// Like [`Self::open_readonly`], but refuses a file that ends inside a
+    /// segment with `TruncatedSegment` instead of silently serving the older
+    /// manifest. Use this for files that arrived over a network or whose
+    /// provenance is unknown; use `open_readonly` for crash recovery.
+    ///
+    /// A file cut exactly on a segment boundary still opens (the cut is
+    /// undetectable without a length commitment in the file).
+    pub fn open_readonly_strict(path: &Path) -> Result<Self, RvfError> {
+        let store = Self::open_readonly(path)?;
+        if store.tail_recovery.is_torn() {
+            return Err(err(ErrorCode::TruncatedSegment));
+        }
+        Ok(store)
+    }
+
     /// Cumulative observability counters for bounded linear metadata scans.
     pub fn metadata_filter_stats(&self) -> MetadataFilterStats {
         MetadataFilterStats {
@@ -3157,6 +3202,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: self.embedding_compatibility,
@@ -3235,8 +3281,12 @@ impl RvfStore {
     /// `witness_type` is one of the `witness_types::*` constants.
     /// `action` is a human-readable action description encoded as bytes.
     ///
-    /// The witness entry is chain-linked to the previous witness via
-    /// `last_witness_hash` using `simple_shake256_256`.
+    /// The witness entry is a fixed 73-byte chain entry linked to the previous one via
+    /// `last_witness_hash` (SHAKE-256), verifiable by `rvf_crypto::verify_witness_chain`.
+    ///
+    /// The head follows the FILE, which is append-only: a failed later step of
+    /// the same operation (manifest write) does not remove the witness segment,
+    /// so callers must not roll `last_witness_hash` back.
     fn append_witness(&mut self, witness_type: u8, action: &[u8]) -> Result<(), RvfError> {
         let writer = self
             .seg_writer
@@ -3268,20 +3318,19 @@ impl RvfStore {
         };
 
         // Compute the payload length for the segment directory.
-        let payload_len = (1 + 8 + 4 + action.len() + 32) as u64;
+        let payload_len = rvf_crypto::WITNESS_ENTRY_SIZE as u64;
         self.segment_dir
             .push((seg_id, seg_offset, payload_len, SegmentType::Witness as u8));
 
-        // Build the serialized witness entry bytes and hash them to update
-        // the chain. This mirrors the payload layout exactly so that
-        // external verifiers can reconstruct the chain from raw segments.
-        let mut entry_bytes = Vec::with_capacity(1 + 8 + 4 + action.len() + 32);
-        entry_bytes.push(witness_type);
-        entry_bytes.extend_from_slice(&timestamp_ns.to_le_bytes());
-        entry_bytes.extend_from_slice(&(action.len() as u32).to_le_bytes());
-        entry_bytes.extend_from_slice(action);
-        entry_bytes.extend_from_slice(&self.last_witness_hash);
-        self.last_witness_hash = simple_shake256_256(&entry_bytes);
+        // Advance the chain head: SHAKE-256 of the exact 73-byte entry just
+        // written, which is what the next entry must carry as `prev_hash`.
+        let entry_bytes = rvf_crypto::encode_chain_entry(
+            &self.last_witness_hash,
+            action,
+            timestamp_ns,
+            witness_type,
+        );
+        self.last_witness_hash = rvf_crypto::chain_entry_hash(&entry_bytes);
 
         Ok(())
     }
@@ -3310,8 +3359,41 @@ impl RvfStore {
 
         let located = match located {
             Some(m) => m,
-            None => return Err(err(ErrorCode::ManifestNotFound)),
+            None => {
+                // A file in a segment-format version this reader does not
+                // know is not "missing a manifest": say so (#1276 item 2).
+                let mut reader = BufReader::new(&self.file);
+                return Err(match read_path::unsupported_version_at_start(&mut reader) {
+                    Ok(Some(v)) => {
+                        log::warn!(
+                            "rvf: {} uses segment format version {v}; this reader supports \
+                             version {} (newer or unsupported format)",
+                            self.path.display(),
+                            rvf_types::SEGMENT_VERSION
+                        );
+                        err(ErrorCode::InvalidVersion)
+                    }
+                    _ => err(ErrorCode::ManifestNotFound),
+                });
+            }
         };
+        // Record what lies after the manifest we are about to serve (#1276):
+        // a torn append recovers to this snapshot (ADR-280), but so does a
+        // truncated file, so make the discarded tail visible.
+        let (tail_recovery, tail_witnesses) = {
+            let mut reader = BufReader::new(&self.file);
+            read_path::inspect_tail(&mut reader, &located).unwrap_or_default()
+        };
+        self.tail_recovery = tail_recovery;
+        if let Some(at) = self.tail_recovery.torn_at {
+            log::warn!(
+                "rvf: {} ends inside a segment (offset {at}); serving the last committed \
+                 manifest at offset {} and ignoring {} byte(s) after it",
+                self.path.display(),
+                located.offset,
+                self.tail_recovery.bytes_after_manifest
+            );
+        }
         // Security policy (no-op under Permissive): signature, manifest
         // binding, and committed per-segment hashes (ADR-354 item 5).
         self.apply_open_policy(&located)?;
@@ -3405,6 +3487,28 @@ impl RvfStore {
             }
         }
 
+        self.restore_witness_head(&tail_witnesses);
+
+        // A writable open must not append after a torn tail: the torn header's
+        // declared length would swallow the new segments and the file would stay
+        // unreadable to every segment walker. Cut the torn bytes off first; this
+        // is exactly what recovery already ignores (ADR-280), so the served
+        // snapshot is unchanged. Files with a signed root page are left alone.
+        if !self.read_only
+            && !self.security.policy.requires_signature()
+            && !self.security.root_page_present.load(Ordering::Acquire)
+        {
+            if let Some(at) = self.tail_recovery.torn_at {
+                if self.file.set_len(at).is_ok() {
+                    log::warn!(
+                        "rvf: {} truncated a torn tail at offset {at} before appending",
+                        self.path.display()
+                    );
+                    self.tail_recovery.repaired = true;
+                }
+            }
+        }
+
         if !self.read_only {
             let max_seg_id = self
                 .segment_dir
@@ -3419,6 +3523,44 @@ impl RvfStore {
         self.verify_all_segments()?;
 
         Ok(())
+    }
+
+    /// Continue the witness hash chain across reopen: the head is the hash of
+    /// the newest WITNESS_SEG's last chain entry. If the newest witness is a
+    /// pre-0.5 legacy record, unreadable, or absent, the chain restarts from
+    /// genesis (zero) -- `rvf verify-witness` treats a legacy record as such a
+    /// restart point.
+    fn restore_witness_head(&mut self, tail_witnesses: &[u64]) {
+        self.last_witness_hash = [0u8; 32];
+        // Candidates newest first, in FILE order: witnesses after the last
+        // manifest (an unsigned audited query, or a commit whose manifest was
+        // lost) are not in the segment directory but are in the file, and the
+        // verifier walks the file.
+        let listed = self
+            .segment_dir
+            .iter()
+            .filter(|&&(_, _, _, t)| t == SegmentType::Witness as u8)
+            .map(|&(_, off, _, _)| off);
+        let candidates: Vec<u64> = listed.chain(tail_witnesses.iter().copied()).collect();
+        // Attestation witnesses carry their own independent chain and do not
+        // move the runtime head (same rule as `rvf verify-witness`); skip them.
+        for offset in candidates.into_iter().rev().take(64) {
+            let mut reader = BufReader::new(&self.file);
+            let Ok((_, payload)) = self.read_seg(&mut reader, offset) else {
+                return;
+            };
+            if rvf_crypto::is_valid_attestation_witness(&payload) {
+                continue;
+            }
+            if rvf_crypto::classify_witness_payload(&payload)
+                == rvf_crypto::WitnessPayloadKind::Chain
+                && payload.len() >= rvf_crypto::WITNESS_ENTRY_SIZE
+            {
+                let last = &payload[payload.len() - rvf_crypto::WITNESS_ENTRY_SIZE..];
+                self.last_witness_hash = rvf_crypto::chain_entry_hash(last);
+            }
+            return;
+        }
     }
 
     fn restore_cow_state(&mut self, ancestry: &mut HashSet<PathBuf>) -> Result<(), RvfError> {

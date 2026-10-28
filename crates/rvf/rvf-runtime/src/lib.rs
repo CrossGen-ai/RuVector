@@ -60,7 +60,7 @@ pub use membership::MembershipFilter;
 pub use options::{
     CompactionResult, DeleteResult, EmbeddingCompatibility, Freshness, IngestResult, MetadataEntry,
     MetadataFilterStats, MetadataValue, QualityEnvelope, QueryOptions, RvfOptions, SearchResult,
-    VectorMetadata, WitnessConfig,
+    TailRecovery, VectorMetadata, WitnessConfig,
 };
 #[cfg(feature = "qr")]
 pub use qr_encode::{EcLevel, QrCode, QrEncoder, QrError};
