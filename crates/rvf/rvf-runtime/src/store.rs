@@ -164,6 +164,8 @@ pub struct RvfStore {
     /// Generations dropped by open because the chain could not be replayed
     /// past them (see [`Self::metadata_recovery`]).
     dropped_metadata_generations: u64,
+    /// Evidence about bytes ignored after the served manifest (#1276).
+    tail_recovery: TailRecovery,
     /// Records the truncated replay resurrected and open therefore discarded.
     dropped_metadata_records: u64,
     /// `META_SEG` offsets a truncated replay could not reach. They are dropped
@@ -277,6 +279,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: EmbeddingCompatibility::Unchecked,
@@ -365,6 +368,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: EmbeddingCompatibility::Unchecked,
@@ -451,6 +455,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: EmbeddingCompatibility::Unchecked,
@@ -2801,6 +2806,28 @@ impl RvfStore {
         }
     }
 
+    /// What `open` ignored after the manifest it served. `is_torn()` means the
+    /// file ends inside a segment: a crashed append (recovered, by design) or a
+    /// truncated/partially downloaded file (indistinguishable from the bytes).
+    pub fn tail_recovery(&self) -> TailRecovery {
+        self.tail_recovery
+    }
+
+    /// Like [`Self::open_readonly`], but refuses a file that ends inside a
+    /// segment with `TruncatedSegment` instead of silently serving the older
+    /// manifest. Use this for files that arrived over a network or whose
+    /// provenance is unknown; use `open_readonly` for crash recovery.
+    ///
+    /// A file cut exactly on a segment boundary still opens (the cut is
+    /// undetectable without a length commitment in the file).
+    pub fn open_readonly_strict(path: &Path) -> Result<Self, RvfError> {
+        let store = Self::open_readonly(path)?;
+        if store.tail_recovery.is_torn() {
+            return Err(err(ErrorCode::TruncatedSegment));
+        }
+        Ok(store)
+    }
+
     /// Cumulative observability counters for bounded linear metadata scans.
     pub fn metadata_filter_stats(&self) -> MetadataFilterStats {
         MetadataFilterStats {
@@ -3165,6 +3192,7 @@ impl RvfStore {
             committed_metadata: MetadataStore::new(),
             committed_file_metadata: BTreeMap::new(),
             dropped_metadata_generations: 0,
+            tail_recovery: TailRecovery::default(),
             dropped_metadata_records: 0,
             orphaned_metadata_offsets: Vec::new(),
             embedding_compatibility: self.embedding_compatibility,
@@ -3335,22 +3363,21 @@ impl RvfStore {
                 });
             }
         };
-        // A tail cut mid-commit is a truncated file, not an older generation
-        // (#1276 item 1; rule documented on `read_path::TailState`). Signed
-        // policies have their own tail rule (`unsigned_tail`).
-        if !self.security.policy.requires_signature() {
+        // Record what lies after the manifest we are about to serve (#1276):
+        // a torn append recovers to this snapshot (ADR-280), but so does a
+        // truncated file, so make the discarded tail visible.
+        self.tail_recovery = {
             let mut reader = BufReader::new(&self.file);
-            if let Ok(read_path::TailState::Truncated { complete, torn_at }) =
-                read_path::inspect_tail(&mut reader, &located)
-            {
-                log::warn!(
-                    "rvf: {} is truncated: {complete} complete segment(s) after the last \
-                     manifest (offset {}), then a segment cut off at offset {torn_at}",
-                    self.path.display(),
-                    located.offset
-                );
-                return Err(err(ErrorCode::TruncatedSegment));
-            }
+            read_path::inspect_tail(&mut reader, &located).unwrap_or_default()
+        };
+        if let Some(at) = self.tail_recovery.torn_at {
+            log::warn!(
+                "rvf: {} ends inside a segment (offset {at}); serving the last committed \
+                 manifest at offset {} and ignoring {} byte(s) after it",
+                self.path.display(),
+                located.offset,
+                self.tail_recovery.bytes_after_manifest
+            );
         }
         // Security policy (no-op under Permissive): signature, manifest
         // binding, and committed per-segment hashes (ADR-354 item 5).

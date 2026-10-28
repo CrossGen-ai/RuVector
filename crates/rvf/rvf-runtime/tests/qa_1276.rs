@@ -1,5 +1,6 @@
-//! Regression tests for issue #1276 (items 1-4): truncated stores, unsupported
-//! segment versions, non-finite query vectors and rejected-only ingests.
+//! Regression tests for issue #1276 (items 1-4): truncated stores (strict open),
+//! unsupported segment versions, non-finite query vectors and rejected-only
+//! ingests.
 
 use rvf_runtime::{QueryOptions, RvfOptions, RvfStore};
 use rvf_types::{ErrorCode, RvfError};
@@ -66,17 +67,25 @@ fn truncated_store_does_not_open_as_empty() {
     let cut = &full[..last_manifest + 64 + 5];
     let cp = d.path().join("cut.rvf");
     std::fs::write(&cp, cut).unwrap();
-    let e = RvfStore::open_readonly(&cp).err().expect("must not open");
+    // The strict open refuses it.
+    let e = RvfStore::open_readonly_strict(&cp)
+        .err()
+        .expect("strict open must refuse a truncated file");
     assert_eq!(code(e), ErrorCode::TruncatedSegment);
-    let e = RvfStore::open(&cp).err().expect("must not open rw either");
-    assert_eq!(code(e), ErrorCode::TruncatedSegment);
-    // The intact file still opens with everything.
-    let s = RvfStore::open_readonly(&path).unwrap();
+    // The recovering open (ADR-280 crash rule) still serves the last manifest
+    // but now REPORTS that it ignored a torn tail.
+    let s = RvfStore::open_readonly(&cp).unwrap();
+    assert!(s.tail_recovery().is_torn(), "{:?}", s.tail_recovery());
+    assert!(s.tail_recovery().uncommitted_segments >= 1);
+    // The intact file opens strictly with everything and no torn tail.
+    let s = RvfStore::open_readonly_strict(&path).unwrap();
     assert_eq!(s.status().total_vectors, 100);
+    assert!(!s.tail_recovery().is_torn());
 }
 
-/// Crash recovery is unchanged: a partially written LAST segment right after
-/// a valid manifest is ignored and the store opens at that manifest.
+/// Crash recovery is unchanged (ADR-280 criterion 6, see
+/// `metadata_crash_safety.rs`): a partially written tail after a valid manifest
+/// is ignored and the store opens at that manifest.
 #[test]
 fn torn_tail_append_is_still_recovered() {
     let d = tempfile::tempdir().unwrap();
@@ -93,10 +102,16 @@ fn torn_tail_append_is_still_recovered() {
     std::fs::write(&cp, cut).unwrap();
     let s = RvfStore::open_readonly(&cp).expect("torn tail append must still open");
     assert_eq!(s.status().total_vectors, 50, "opens at the last manifest");
+    assert!(s.tail_recovery().is_torn());
+    assert_eq!(
+        code(RvfStore::open_readonly_strict(&cp).err().unwrap()),
+        ErrorCode::TruncatedSegment
+    );
 }
 
-/// Sweep every cut length: an open either fails or yields exactly a whole
-/// generation (0, 50 or 100 vectors) -- never a partial state or a panic.
+/// Sweep every cut length: a STRICT open either fails or yields exactly a whole
+/// generation (0, 50 or 100 vectors) with no torn tail -- never a partial state
+/// or a panic. The recovering open never panics and also serves whole generations.
 #[test]
 fn every_cut_is_an_error_or_a_whole_generation() {
     let d = tempfile::tempdir().unwrap();
@@ -107,8 +122,13 @@ fn every_cut_is_an_error_or_a_whole_generation() {
     let mut rejected = 0;
     for len in (0..full.len()).step_by(7) {
         std::fs::write(&cp, &full[..len]).unwrap();
-        match RvfStore::open_readonly(&cp) {
+        if let Ok(s) = RvfStore::open_readonly(&cp) {
+            let n = s.status().total_vectors;
+            assert!(n == 0 || n == 50 || n == 100, "recover len {len}: {n}");
+        }
+        match RvfStore::open_readonly_strict(&cp) {
             Ok(s) => {
+                assert!(!s.tail_recovery().is_torn(), "len {len}");
                 opened += 1;
                 let n = s.status().total_vectors;
                 assert!(n == 0 || n == 50 || n == 100, "len {len}: {n} vectors");

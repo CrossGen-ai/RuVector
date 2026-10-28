@@ -37,7 +37,10 @@ fn runtime_witness_is_a_verifiable_chain_across_reopen() {
     }
     let payloads = witness_payloads(&std::fs::read(&path).unwrap());
     assert_eq!(payloads.len(), 3);
-    assert!(payloads.iter().all(|p| p.len() == 73), "one 73-byte entry each");
+    assert!(
+        payloads.iter().all(|p| p.len() == 73),
+        "one 73-byte entry each"
+    );
     let chain: Vec<u8> = payloads.concat();
     let entries = rvf_crypto::verify_witness_chain(&chain).expect("chain verifies");
     assert_eq!(entries.len(), 3);

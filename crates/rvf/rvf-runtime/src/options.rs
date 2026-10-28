@@ -354,3 +354,31 @@ pub struct MetadataRecovery {
     /// carried the deletion. They are excluded from the served metadata.
     pub dropped_records: u64,
 }
+
+/// What follows the manifest `open` selected (crash-recovery evidence).
+///
+/// Open serves the newest valid manifest and ignores later bytes: that is the
+/// ADR-280 crash rule, so a torn append recovers to the prior snapshot. The
+/// same bytes also result from a file cut short in transit, which then looks
+/// like an older -- possibly empty -- generation (#1276). The library cannot
+/// tell the two apart, so it reports what it ignored; strict callers use
+/// [`crate::RvfStore::open_readonly_strict`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TailRecovery {
+    /// Offset of a segment cut off by end-of-file (a header whose payload runs
+    /// past EOF, or a partial header), if any. A healthy file never has one.
+    pub torn_at: Option<u64>,
+    /// Complete non-manifest segments after the selected manifest that no
+    /// manifest commits (e.g. data whose commit record was lost). May also be
+    /// non-zero in a healthy file (an unsigned audit-query witness).
+    pub uncommitted_segments: u32,
+    /// Bytes from the end of the selected manifest to the end of the file.
+    pub bytes_after_manifest: u64,
+}
+
+impl TailRecovery {
+    /// True when the file ends inside a segment: a torn write or truncation.
+    pub fn is_torn(&self) -> bool {
+        self.torn_at.is_some()
+    }
+}

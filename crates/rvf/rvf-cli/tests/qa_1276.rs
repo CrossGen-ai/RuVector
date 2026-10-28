@@ -59,6 +59,14 @@ fn truncated_store_status_and_query_exit_nonzero() {
     assert!(text(&o).contains("TruncatedSegment"), "{}", text(&o));
     let o = rvf(&["query", "cut.rvf", "-v", "1,2,3,4"], d.path());
     assert!(!o.status.success(), "query must fail: {}", text(&o));
+    let o = rvf(&["inspect", "cut.rvf"], d.path());
+    assert!(!o.status.success(), "inspect must fail: {}", text(&o));
+    // Explicit opt-in recovers the last committed snapshot (and warns).
+    let o = rvf(&["status", "--recover", "cut.rvf"], d.path());
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("ends inside a segment"), "{}", text(&o));
+    // The intact file is unaffected.
+    assert!(rvf(&["status", "s.rvf"], d.path()).status.success());
 }
 
 #[test]

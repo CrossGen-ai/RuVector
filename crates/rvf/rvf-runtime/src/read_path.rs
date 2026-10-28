@@ -247,37 +247,14 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
     Ok(None)
 }
 
-/// What follows the manifest that open selected.
+/// Classify the bytes after the manifest that open selected (bounded walk).
 ///
-/// Open selects the NEWEST valid manifest and ignores everything after it, which
-/// is the crash-recovery rule for a torn tail write. The same bytes also
-/// result from a file cut short in transit, which would then silently look
-/// like an older (possibly empty) generation of the store (#1276 item 1).
-/// The two cannot be told apart in general, so the rule is deliberately narrow:
-///
-/// * clean end, or only a partially written LAST segment right after the
-///   manifest: ignored (a torn append; the old behaviour);
-/// * one or more COMPLETE segments after the manifest and then a segment cut
-///   off by end-of-file: a commit that was in progress (data written, its
-///   manifest cut) or a truncated file. Reported as truncation, never opened.
-///
-/// Known limit: a file cut exactly on a segment boundary, or inside the first
-/// segment after the last manifest, is indistinguishable from a clean crash
-/// and still opens at the older generation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TailState {
-    /// Nothing, or only a partial last segment, follows the manifest.
-    Recoverable,
-    /// `complete` whole segments follow the manifest, then a segment that
-    /// runs past end-of-file at `torn_at`.
-    Truncated { complete: u32, torn_at: u64 },
-}
-
-/// Walk the segments after `located` (bounded) and classify the tail.
+/// See [`crate::options::TailRecovery`]: open ignores them (ADR-280 crash
+/// rule) but reports what it ignored.
 pub(crate) fn inspect_tail<R: Read + Seek>(
     reader: &mut R,
     located: &LocatedManifest,
-) -> io::Result<TailState> {
+) -> io::Result<crate::options::TailRecovery> {
     let file_size = reader.seek(SeekFrom::End(0))?;
     let end = body_end(reader, file_size)?;
     let step = |off: u64, h: &SegmentHeader| {
@@ -290,11 +267,28 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
             align_up(unpadded)
         }
     };
-    let mut pos = step(located.offset, &located.header);
-    let mut complete = 0u32;
+    let manifest_end = step(located.offset, &located.header).min(end);
+    let mut info = crate::options::TailRecovery {
+        bytes_after_manifest: end - manifest_end,
+        ..Default::default()
+    };
+    let mut pos = manifest_end;
     // Bound the walk: a hostile tail of tiny segments must not cost O(file).
     for _ in 0..4096 {
         if pos >= end {
+            break;
+        }
+        let avail = end - pos;
+        if avail < SEGMENT_HEADER_SIZE as u64 {
+            // A partial header that already carries our magic is a cut-off write.
+            if avail >= 4 {
+                let mut m = [0u8; 4];
+                reader.seek(SeekFrom::Start(pos))?;
+                reader.read_exact(&mut m)?;
+                if m == SEGMENT_MAGIC.to_le_bytes() {
+                    info.torn_at = Some(pos);
+                }
+            }
             break;
         }
         let Some(h) = header_at(reader, pos, end)? else {
@@ -304,21 +298,15 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
             .saturating_add(SEGMENT_HEADER_SIZE as u64)
             .saturating_add(h.payload_length);
         if payload_end > end {
-            return Ok(if complete > 0 {
-                TailState::Truncated {
-                    complete,
-                    torn_at: pos,
-                }
-            } else {
-                TailState::Recoverable
-            });
+            info.torn_at = Some(pos);
+            break;
         }
         if h.seg_type != rvf_types::SegmentType::Manifest as u8 {
-            complete += 1;
+            info.uncommitted_segments += 1;
         }
         pos = step(pos, &h);
     }
-    Ok(TailState::Recoverable)
+    Ok(info)
 }
 
 /// If the file starts with a segment header carrying our magic but a segment
