@@ -541,7 +541,8 @@ impl RvfStore {
         }
 
         if valid_vectors.is_empty() {
-            self.epoch += 1;
+            // Nothing was accepted, so nothing was written: the epoch must not
+            // advance (#1276 item 4).
             return Ok(IngestResult {
                 accepted: 0,
                 rejected,
@@ -726,6 +727,19 @@ impl RvfStore {
         Ok(results)
     }
 
+    /// Validate a query vector at the API boundary: right dimension, and every
+    /// component finite. NaN or infinite components make every distance NaN
+    /// (or infinite) and used to be returned as ordinary results (#1276).
+    fn check_query_vector(&self, vector: &[f32]) -> Result<(), RvfError> {
+        if vector.len() != self.options.dimension as usize {
+            return Err(err(ErrorCode::DimensionMismatch));
+        }
+        if vector.iter().any(|x| !x.is_finite()) {
+            return Err(err(ErrorCode::NonFiniteQuery));
+        }
+        Ok(())
+    }
+
     /// Populate [`SearchResult::metadata`] on each hit when the query opted
     /// in via [`QueryOptions::include_metadata`] (ADR-280 §6).
     ///
@@ -752,10 +766,7 @@ impl RvfStore {
         k: usize,
         options: &QueryOptions,
     ) -> Result<(Vec<SearchResult>, bool), RvfError> {
-        let dim = self.options.dimension as usize;
-        if vector.len() != dim {
-            return Err(err(ErrorCode::DimensionMismatch));
-        }
+        self.check_query_vector(vector)?;
 
         // COW children may have zero child-side vectors but still need parent
         // read-through; only skip early for non-COW empty stores.
@@ -1336,10 +1347,7 @@ impl RvfStore {
         use std::time::Instant;
 
         let start = Instant::now();
-        let dim = self.options.dimension as usize;
-        if vector.len() != dim {
-            return Err(err(ErrorCode::DimensionMismatch));
-        }
+        self.check_query_vector(vector)?;
 
         // Determine effective budget based on quality preference.
         let budget = match options.quality_preference {
@@ -3310,8 +3318,41 @@ impl RvfStore {
 
         let located = match located {
             Some(m) => m,
-            None => return Err(err(ErrorCode::ManifestNotFound)),
+            None => {
+                // A file in a segment-format version this reader does not
+                // know is not "missing a manifest": say so (#1276 item 2).
+                let mut reader = BufReader::new(&self.file);
+                return Err(match read_path::unsupported_version_at_start(&mut reader) {
+                    Ok(Some(v)) => {
+                        log::warn!(
+                            "rvf: {} uses segment format version {v}; this reader supports \
+                             version {} (newer or unsupported format)",
+                            self.path.display(),
+                            rvf_types::SEGMENT_VERSION
+                        );
+                        err(ErrorCode::InvalidVersion)
+                    }
+                    _ => err(ErrorCode::ManifestNotFound),
+                });
+            }
         };
+        // A tail cut mid-commit is a truncated file, not an older generation
+        // (#1276 item 1; rule documented on `read_path::TailState`). Signed
+        // policies have their own tail rule (`unsigned_tail`).
+        if !self.security.policy.requires_signature() {
+            let mut reader = BufReader::new(&self.file);
+            if let Ok(read_path::TailState::Truncated { complete, torn_at }) =
+                read_path::inspect_tail(&mut reader, &located)
+            {
+                log::warn!(
+                    "rvf: {} is truncated: {complete} complete segment(s) after the last \
+                     manifest (offset {}), then a segment cut off at offset {torn_at}",
+                    self.path.display(),
+                    located.offset
+                );
+                return Err(err(ErrorCode::TruncatedSegment));
+            }
+        }
         // Security policy (no-op under Permissive): signature, manifest
         // binding, and committed per-segment hashes (ADR-354 item 5).
         self.apply_open_policy(&located)?;

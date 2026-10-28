@@ -84,6 +84,7 @@ fn classify(code: ErrorCode) -> &'static str {
         ErrorCode::StreamBadState => "known",
         ErrorCode::StreamDuplicateFlood => "known",
         ErrorCode::FreshnessRequired => "known",
+        ErrorCode::NonFiniteQuery => "known",
         ErrorCode::QualityBelowThreshold => "known",
         ErrorCode::BudgetTokensExhausted => "known",
         ErrorCode::QueryBlacklisted => "known",

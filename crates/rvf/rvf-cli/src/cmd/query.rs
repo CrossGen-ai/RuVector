@@ -36,6 +36,13 @@ pub fn run(args: QueryArgs) -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("Invalid vector component '{s}': {e}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if let Some(i) = vector.iter().position(|x| !x.is_finite()) {
+        return Err(format!(
+            "invalid query vector: component {i} is not finite (NaN or infinity) [{:?}]",
+            rvf_types::ErrorCode::NonFiniteQuery
+        )
+        .into());
+    }
 
     let filter = match &args.filter {
         Some(f) => Some(parse_filter_json(f)?),

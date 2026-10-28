@@ -247,6 +247,95 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
     Ok(None)
 }
 
+/// What follows the manifest that open selected.
+///
+/// Open selects the NEWEST valid manifest and ignores everything after it, which
+/// is the crash-recovery rule for a torn tail write. The same bytes also
+/// result from a file cut short in transit, which would then silently look
+/// like an older (possibly empty) generation of the store (#1276 item 1).
+/// The two cannot be told apart in general, so the rule is deliberately narrow:
+///
+/// * clean end, or only a partially written LAST segment right after the
+///   manifest: ignored (a torn append; the old behaviour);
+/// * one or more COMPLETE segments after the manifest and then a segment cut
+///   off by end-of-file: a commit that was in progress (data written, its
+///   manifest cut) or a truncated file. Reported as truncation, never opened.
+///
+/// Known limit: a file cut exactly on a segment boundary, or inside the first
+/// segment after the last manifest, is indistinguishable from a clean crash
+/// and still opens at the older generation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TailState {
+    /// Nothing, or only a partial last segment, follows the manifest.
+    Recoverable,
+    /// `complete` whole segments follow the manifest, then a segment that
+    /// runs past end-of-file at `torn_at`.
+    Truncated { complete: u32, torn_at: u64 },
+}
+
+/// Walk the segments after `located` (bounded) and classify the tail.
+pub(crate) fn inspect_tail<R: Read + Seek>(
+    reader: &mut R,
+    located: &LocatedManifest,
+) -> io::Result<TailState> {
+    let file_size = reader.seek(SeekFrom::End(0))?;
+    let end = body_end(reader, file_size)?;
+    let step = |off: u64, h: &SegmentHeader| {
+        let unpadded = off
+            .saturating_add(SEGMENT_HEADER_SIZE as u64)
+            .saturating_add(h.payload_length);
+        if located.mode == ScanMode::ByteGranular {
+            unpadded
+        } else {
+            align_up(unpadded)
+        }
+    };
+    let mut pos = step(located.offset, &located.header);
+    let mut complete = 0u32;
+    // Bound the walk: a hostile tail of tiny segments must not cost O(file).
+    for _ in 0..4096 {
+        if pos >= end {
+            break;
+        }
+        let Some(h) = header_at(reader, pos, end)? else {
+            break;
+        };
+        let payload_end = pos
+            .saturating_add(SEGMENT_HEADER_SIZE as u64)
+            .saturating_add(h.payload_length);
+        if payload_end > end {
+            return Ok(if complete > 0 {
+                TailState::Truncated { complete, torn_at: pos }
+            } else {
+                TailState::Recoverable
+            });
+        }
+        if h.seg_type != rvf_types::SegmentType::Manifest as u8 {
+            complete += 1;
+        }
+        pos = step(pos, &h);
+    }
+    Ok(TailState::Recoverable)
+}
+
+/// If the file starts with a segment header carrying our magic but a segment
+/// version this reader does not support, return that version byte. Used to
+/// report "unsupported / newer format" instead of a generic missing-manifest
+/// or checksum failure (#1276 item 2).
+pub(crate) fn unsupported_version_at_start<R: Read + Seek>(
+    reader: &mut R,
+) -> io::Result<Option<u8>> {
+    let len = reader.seek(SeekFrom::End(0))?;
+    if len < SEGMENT_HEADER_SIZE as u64 {
+        return Ok(None);
+    }
+    reader.seek(SeekFrom::Start(0))?;
+    let mut b = [0u8; 8];
+    reader.read_exact(&mut b)?;
+    let magic = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+    Ok((magic == SEGMENT_MAGIC && b[4] != rvf_types::SEGMENT_VERSION).then_some(b[4]))
+}
+
 /// Read and parse the manifest segment at exactly `offset`, or `None`.
 fn manifest_at<R: Read + Seek>(
     reader: &mut R,
