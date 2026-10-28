@@ -60,7 +60,8 @@ pub enum ErrorCode {
     Timeout = 0x0205,
     /// Linear metadata filtering exceeded an explicit resource budget.
     FilterBudgetExceeded = 0x0206,
-    /// Query vector contains NaN or an infinity (invalid input).
+    /// Query vector contains NaN or an infinity, or its distances overflow to
+    /// a non-finite value (invalid input).
     NonFiniteQuery = 0x0207,
 
     // ---- Category 0x03: Write Errors ----
@@ -342,6 +343,7 @@ impl TryFrom<u16> for ErrorCode {
 /// Rust-idiomatic error type wrapping format-level failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum RvfError {
     /// A wire-level error code was returned.
     Code(ErrorCode),

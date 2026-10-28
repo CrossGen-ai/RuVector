@@ -1,6 +1,6 @@
 [package]
 name = "ruvector-robotics"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Cognitive robotics platform: bridge types, perception pipeline, cognitive architecture, and MCP tools"

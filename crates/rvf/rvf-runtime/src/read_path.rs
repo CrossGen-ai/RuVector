@@ -254,7 +254,7 @@ pub(crate) fn find_latest_manifest<R: Read + Seek>(
 pub(crate) fn inspect_tail<R: Read + Seek>(
     reader: &mut R,
     located: &LocatedManifest,
-) -> io::Result<(crate::options::TailRecovery, Option<u64>)> {
+) -> io::Result<(crate::options::TailRecovery, Vec<u64>)> {
     let file_size = reader.seek(SeekFrom::End(0))?;
     let end = body_end(reader, file_size)?;
     let step = |off: u64, h: &SegmentHeader| {
@@ -273,7 +273,16 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
         ..Default::default()
     };
     let mut pos = manifest_end;
-    let mut last_witness: Option<u64> = None;
+    let mut tail_witnesses: Vec<u64> = Vec::new();
+    // Zero bytes are alignment padding; anything else that is not a whole
+    // segment is a cut-off or garbage tail (checks the first 4 KiB only).
+    let residual_nonzero = |reader: &mut R, from: u64| -> io::Result<bool> {
+        let n = (end - from).min(4096) as usize;
+        let mut buf = vec![0u8; n];
+        reader.seek(SeekFrom::Start(from))?;
+        reader.read_exact(&mut buf)?;
+        Ok(buf.iter().any(|&b| b != 0))
+    };
     // Bound the walk: a hostile tail of tiny segments must not cost O(file).
     for _ in 0..4096 {
         if pos >= end {
@@ -281,18 +290,16 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
         }
         let avail = end - pos;
         if avail < SEGMENT_HEADER_SIZE as u64 {
-            // A partial header that already carries our magic is a cut-off write.
-            if avail >= 4 {
-                let mut m = [0u8; 4];
-                reader.seek(SeekFrom::Start(pos))?;
-                reader.read_exact(&mut m)?;
-                if m == SEGMENT_MAGIC.to_le_bytes() {
-                    info.torn_at = Some(pos);
-                }
+            // Fewer bytes than a header: non-zero residue is a cut-off write.
+            if residual_nonzero(reader, pos)? {
+                info.torn_at = Some(pos);
             }
             break;
         }
         let Some(h) = header_at(reader, pos, end)? else {
+            if residual_nonzero(reader, pos)? {
+                info.torn_at = Some(pos);
+            }
             break;
         };
         let payload_end = pos
@@ -306,11 +313,11 @@ pub(crate) fn inspect_tail<R: Read + Seek>(
             info.uncommitted_segments += 1;
         }
         if h.seg_type == rvf_types::SegmentType::Witness as u8 {
-            last_witness = Some(pos);
+            tail_witnesses.push(pos);
         }
         pos = step(pos, &h);
     }
-    Ok((info, last_witness))
+    Ok((info, tail_witnesses))
 }
 
 /// If the file starts with a segment header carrying our magic but a segment

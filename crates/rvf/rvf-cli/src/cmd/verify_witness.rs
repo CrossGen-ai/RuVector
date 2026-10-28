@@ -17,15 +17,20 @@
 //!   `--allow-legacy` turns exit 2 into exit 0.
 //!
 //! Limits: the chain is unkeyed and unsigned. It detects accidental damage and
-//! edits that do not recompute the following hashes; it does not stop an
-//! attacker who rewrites the whole tail, and it cannot see removal of the
-//! newest entries.
+//! edits that do not recompute the following hashes. It does NOT detect
+//! (a) removal or replacement of the newest entries, (b) stripping every
+//! witness segment (use `--require-witness` to fail on an empty trail, which
+//! still cannot prove one ever existed), or (c) an attacker who recomputes the
+//! tail. Attestation segments are accepted only if they fully verify as an
+//! attestation witness; they form independent chains and do not move the
+//! runtime chain head.
 
 use clap::Args;
 use std::io::{BufReader, Read};
 
 use rvf_crypto::{
-    classify_witness_payload, verify_witness_chain_from, WitnessEntry, WitnessPayloadKind,
+    classify_witness_payload, is_valid_attestation_witness, verify_witness_chain_from,
+    WitnessEntry, WitnessPayloadKind,
 };
 use rvf_types::{SegmentType, SEGMENT_HEADER_SIZE, SEGMENT_MAGIC};
 
@@ -40,6 +45,11 @@ pub struct VerifyWitnessArgs {
     /// witness records from rvf-runtime <= 0.4.0
     #[arg(long)]
     pub allow_legacy: bool,
+    /// Exit 1 when the file has no witness segments at all. Without this a
+    /// store whose audit trail was stripped verifies exactly like a store that
+    /// never had one (an unkeyed hash chain cannot tell them apart).
+    #[arg(long)]
+    pub require_witness: bool,
 }
 
 /// One WITNESS_SEG found in the file.
@@ -66,6 +76,21 @@ fn extract_witness_segments(raw: &[u8]) -> Vec<Found> {
                 .and_then(|l| payload_start.checked_add(l));
 
             if let Some(payload_end) = payload_end.filter(|&e| e <= raw.len()) {
+                // A torn header whose declared length is later covered by newly
+                // appended segments would swallow them. If a valid segment header
+                // sits at an aligned offset inside the declared payload, this
+                // header is a stale torn one: skip it, do not follow its length.
+                let swallows = seg_type == SegmentType::Witness as u8
+                    && (payload_start..payload_end).step_by(64).any(|p| {
+                        p > i
+                            && p + SEGMENT_HEADER_SIZE <= raw.len()
+                            && raw[p..p + 4] == magic_bytes
+                            && rvf_wire::reader::read_segment_header(&raw[p..]).is_ok()
+                    });
+                if swallows {
+                    i += SEGMENT_HEADER_SIZE;
+                    continue;
+                }
                 if seg_type == SegmentType::Witness as u8 {
                     let payload = raw[payload_start..payload_end].to_vec();
                     let hash_ok = rvf_wire::reader::read_segment_header(&raw[i..])
@@ -90,21 +115,6 @@ fn extract_witness_segments(raw: &[u8]) -> Vec<Found> {
         i += 1;
     }
     results
-}
-
-/// Attestation witnesses (`rvf-crypto::attestation`) share the segment type
-/// but are verified by `rvf verify-attestation`: a `u32` count, an offset
-/// table, then count chain entries.
-fn looks_like_attestation(p: &[u8]) -> bool {
-    if p.len() < 4 {
-        return false;
-    }
-    let count = u32::from_le_bytes([p[0], p[1], p[2], p[3]]) as usize;
-    count > 0
-        && count < 10_000
-        && p.len()
-            >= 4usize.saturating_add(count.saturating_mul(8 + rvf_crypto::WITNESS_ENTRY_SIZE))
-        && !p.len().is_multiple_of(rvf_crypto::WITNESS_ENTRY_SIZE)
 }
 
 /// Format a nanosecond timestamp as a human-readable UTC string.
@@ -153,6 +163,13 @@ pub fn run(args: VerifyWitnessArgs) -> Result<(), Box<dyn std::error::Error>> {
             }));
         } else {
             println!("No witness segments found in file.");
+            println!(
+                "  WARNING: nothing was verified. A stripped audit trail looks the same; \
+                 use --require-witness to fail on this."
+            );
+        }
+        if args.require_witness {
+            return Err("no witness segments found (--require-witness)".into());
         }
         return Ok(());
     }
@@ -171,46 +188,55 @@ pub fn run(args: VerifyWitnessArgs) -> Result<(), Box<dyn std::error::Error>> {
         if !seg.hash_ok {
             errs.push("segment content hash mismatch (payload altered or damaged)".into());
         }
-        let (kind, entries) = if looks_like_attestation(&seg.payload) {
+        let p = &seg.payload;
+        // Classification never guesses from the length or shape alone:
+        // every accepted kind must fully verify. Order: (1) hash chain,
+        // (2) a complete attestation payload (`verify-attestation` format;
+        // its own chain, does not move the runtime chain head),
+        // (3) the legacy 0.4.0 record, reported but never valid, (4) failure.
+        let mut chain_err: Option<String> = None;
+        let mut classified: Option<(&'static str, usize)> = None;
+        if p.is_empty() || p.len().is_multiple_of(rvf_crypto::WITNESS_ENTRY_SIZE) {
+            let start = if broken && p.len() >= 32 {
+                // Re-anchor after an earlier failure so one break is reported
+                // once instead of poisoning every later link.
+                p[..32].try_into().unwrap()
+            } else {
+                head
+            };
+            match verify_witness_chain_from(p, &start) {
+                Ok((entries, next)) => {
+                    head = next;
+                    let n = entries.len();
+                    all_entries.extend(entries);
+                    classified = Some(("chain", n));
+                }
+                Err(e) => {
+                    chain_err = Some(format!(
+                        "{e}: hash chain broken (entry altered, removed, or out of order)"
+                    ))
+                }
+            }
+        }
+        if classified.is_none() && is_valid_attestation_witness(p) {
             attestation += 1;
-            ("attestation", 0)
-        } else {
-            match classify_witness_payload(&seg.payload) {
-                WitnessPayloadKind::Chain => {
-                    let start = if broken && seg.payload.len() >= 32 {
-                        // Re-anchor after an earlier failure so one break is
-                        // reported once instead of poisoning every later link.
-                        seg.payload[..32].try_into().unwrap()
-                    } else {
-                        head
-                    };
-                    match verify_witness_chain_from(&seg.payload, &start) {
-                        Ok((entries, next)) => {
-                            head = next;
-                            let n = entries.len();
-                            all_entries.extend(entries);
-                            ("chain", n)
-                        }
-                        Err(e) => {
-                            errs.push(format!(
-                                "{e}: hash chain broken (entry altered, removed, or out of order)"
-                            ));
-                            ("chain", seg.payload.len() / rvf_crypto::WITNESS_ENTRY_SIZE)
-                        }
-                    }
-                }
-                WitnessPayloadKind::Legacy => {
-                    // Written by rvf-runtime <= 0.4.0: carries no verifiable
-                    // hash. The runtime restarts its chain after such a record.
-                    legacy += 1;
-                    head = [0u8; 32];
-                    broken = false;
-                    ("legacy", 1)
-                }
-                WitnessPayloadKind::Unrecognized => {
-                    errs.push("payload is neither a chain entry nor a legacy record".into());
-                    ("unrecognized", 0)
-                }
+            classified = Some(("attestation", 0));
+        }
+        if classified.is_none() && classify_witness_payload(p) == WitnessPayloadKind::Legacy {
+            // Written by rvf-runtime <= 0.4.0: carries no verifiable hash. The
+            // runtime restarts its chain after such a record. Never "valid".
+            legacy += 1;
+            head = [0u8; 32];
+            broken = false;
+            classified = Some(("legacy", 1));
+        }
+        let (kind, entries) = match classified {
+            Some(c) => c,
+            None => {
+                errs.push(chain_err.unwrap_or_else(|| {
+                    "payload is not a valid chain entry, attestation, or legacy record".into()
+                }));
+                ("unrecognized", 0)
             }
         };
         let valid = errs.is_empty() && kind == "chain";

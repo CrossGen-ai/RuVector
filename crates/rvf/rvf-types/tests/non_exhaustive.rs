@@ -122,3 +122,19 @@ fn error_code_is_non_exhaustive_and_wildcard_is_reachable() {
 fn stream_class_is_non_exhaustive() {
     assert_eq!(class_name(StreamClass::of(0x06)), "model");
 }
+
+#[test]
+fn rvf_error_and_friends_are_non_exhaustive() {
+    use rvf_types::RvfError;
+    let name = |e: RvfError| match e {
+        RvfError::Code(_) => "code",
+        RvfError::UnknownCode(_) => "unknown",
+        RvfError::BadMagic { .. } => "magic",
+        RvfError::SizeMismatch { .. } => "size",
+        RvfError::InvalidEnumValue { .. } => "enum",
+        RvfError::Security(_) => "security",
+        RvfError::QualityBelowThreshold { .. } => "quality",
+        _ => "future",
+    };
+    assert_eq!(name(RvfError::UnknownCode(1)), "unknown");
+}

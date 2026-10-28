@@ -144,16 +144,20 @@ pub fn parse_legacy_witness_record(p: &[u8]) -> Option<LegacyWitnessRecord> {
     })
 }
 
-/// Classify a WITNESS_SEG payload. A payload whose length is a multiple of 73
-/// is always treated as a chain (and so must verify): a tampered chain can
-/// never be downgraded to "legacy" by making it look like a legacy record.
-/// A genuine legacy record that happens to be 73k bytes long is therefore
-/// reported as a failed chain, which is the safe direction.
+/// Shape-only classification of a WITNESS_SEG payload (nothing is verified).
+///
+/// A payload that parses EXACTLY as a legacy record is `Legacy`, including the
+/// rare 73-byte legacy record (45 + a 28-byte action) that has the same length
+/// as one chain entry; a real chain entry parses as legacy only if bytes 9..13
+/// of its `prev_hash` happen to equal 28 (about 2^-32). `Legacy` is never
+/// "valid", so misclassifying a tampered chain entry as legacy cannot make a
+/// file verify. Verifiers must try chain verification first and fall back to
+/// this only when it fails.
 pub fn classify_witness_payload(p: &[u8]) -> WitnessPayloadKind {
-    if p.is_empty() || p.len().is_multiple_of(ENTRY_SIZE) {
-        WitnessPayloadKind::Chain
-    } else if parse_legacy_witness_record(p).is_some() {
+    if parse_legacy_witness_record(p).is_some() {
         WitnessPayloadKind::Legacy
+    } else if p.is_empty() || p.len().is_multiple_of(ENTRY_SIZE) {
+        WitnessPayloadKind::Chain
     } else {
         WitnessPayloadKind::Unrecognized
     }

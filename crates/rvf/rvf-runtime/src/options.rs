@@ -374,6 +374,9 @@ pub struct TailRecovery {
     pub uncommitted_segments: u32,
     /// Bytes from the end of the selected manifest to the end of the file.
     pub bytes_after_manifest: u64,
+    /// A writable open cut the torn tail off (at `torn_at`) before appending,
+    /// so the file is clean again. Read-only opens never modify the file.
+    pub repaired: bool,
 }
 
 impl TailRecovery {

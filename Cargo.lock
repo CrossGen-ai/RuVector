@@ -9826,7 +9826,7 @@ dependencies = [
 
 [[package]]
 name = "ruvector-domain-expansion"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "criterion 0.5.1",
  "proptest",
@@ -10904,7 +10904,7 @@ dependencies = [
 
 [[package]]
 name = "ruvector-robotics"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "criterion 0.5.1",
  "rand 0.8.6",
@@ -12197,7 +12197,7 @@ dependencies = [
 
 [[package]]
 name = "rvf-forge-core"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "ed25519-dalek",
  "rvf-crypto",

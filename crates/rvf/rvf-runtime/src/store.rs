@@ -536,7 +536,9 @@ impl RvfStore {
         let mut valid_ids: Vec<u64> = Vec::with_capacity(ids.len());
 
         for (i, &vec_data) in vectors.iter().enumerate() {
-            if vec_data.len() != dim {
+            // Non-finite components poison every distance: reject the row
+            // like a dimension mismatch (#1276 review).
+            if vec_data.len() != dim || vec_data.iter().any(|x| !x.is_finite()) {
                 rejected += 1;
                 continue;
             }
@@ -725,8 +727,20 @@ impl RvfStore {
         options: &QueryOptions,
     ) -> Result<Vec<SearchResult>, RvfError> {
         let (mut results, _) = self.query_routed(vector, k, options)?;
+        Self::check_results_finite(&results)?;
         self.attach_metadata(&mut results, options);
         Ok(results)
+    }
+
+    /// A finite query can still overflow (e.g. components near `f32::MAX`) so
+    /// that distances are inf/NaN and cannot be ranked; refuse rather than
+    /// return an arbitrary order. (Also guards stores that already hold
+    /// non-finite vectors ingested before ingest rejected them.)
+    fn check_results_finite(results: &[SearchResult]) -> Result<(), RvfError> {
+        if results.iter().any(|r| !r.distance.is_finite()) {
+            return Err(err(ErrorCode::NonFiniteQuery));
+        }
+        Ok(())
     }
 
     /// Validate a query vector at the API boundary: right dimension, and every
@@ -1360,6 +1374,7 @@ impl RvfStore {
 
         // Execute the base query, tracking whether the HNSW index served it.
         let (results, index_used) = self.query_routed(vector, k, options)?;
+        Self::check_results_finite(&results)?;
         let hnsw_candidate_count = results.len() as u32;
 
         // Determine if safety net should activate.
@@ -3365,7 +3380,7 @@ impl RvfStore {
         // Record what lies after the manifest we are about to serve (#1276):
         // a torn append recovers to this snapshot (ADR-280), but so does a
         // truncated file, so make the discarded tail visible.
-        let (tail_recovery, tail_witness) = {
+        let (tail_recovery, tail_witnesses) = {
             let mut reader = BufReader::new(&self.file);
             read_path::inspect_tail(&mut reader, &located).unwrap_or_default()
         };
@@ -3472,7 +3487,27 @@ impl RvfStore {
             }
         }
 
-        self.restore_witness_head(tail_witness);
+        self.restore_witness_head(&tail_witnesses);
+
+        // A writable open must not append after a torn tail: the torn header's
+        // declared length would swallow the new segments and the file would stay
+        // unreadable to every segment walker. Cut the torn bytes off first; this
+        // is exactly what recovery already ignores (ADR-280), so the served
+        // snapshot is unchanged. Files with a signed root page are left alone.
+        if !self.read_only
+            && !self.security.policy.requires_signature()
+            && !self.security.root_page_present.load(Ordering::Acquire)
+        {
+            if let Some(at) = self.tail_recovery.torn_at {
+                if self.file.set_len(at).is_ok() {
+                    log::warn!(
+                        "rvf: {} truncated a torn tail at offset {at} before appending",
+                        self.path.display()
+                    );
+                    self.tail_recovery.repaired = true;
+                }
+            }
+        }
 
         if !self.read_only {
             let max_seg_id = self
@@ -3495,30 +3530,36 @@ impl RvfStore {
     /// pre-0.5 legacy record, unreadable, or absent, the chain restarts from
     /// genesis (zero) -- `rvf verify-witness` treats a legacy record as such a
     /// restart point.
-    fn restore_witness_head(&mut self, tail_witness: Option<u64>) {
+    fn restore_witness_head(&mut self, tail_witnesses: &[u64]) {
         self.last_witness_hash = [0u8; 32];
-        // The head is the newest witness in FILE order. A witness appended
-        // after the last manifest (an unsigned audited query, or a commit whose
-        // manifest was lost) is not listed in the segment directory but is in
-        // the file, and the verifier walks the file.
+        // Candidates newest first, in FILE order: witnesses after the last
+        // manifest (an unsigned audited query, or a commit whose manifest was
+        // lost) are not in the segment directory but are in the file, and the
+        // verifier walks the file.
         let listed = self
             .segment_dir
             .iter()
-            .rev()
-            .find(|&&(_, _, _, t)| t == SegmentType::Witness as u8)
+            .filter(|&&(_, _, _, t)| t == SegmentType::Witness as u8)
             .map(|&(_, off, _, _)| off);
-        let Some(offset) = tail_witness.or(listed) else {
+        let candidates: Vec<u64> = listed.chain(tail_witnesses.iter().copied()).collect();
+        // Attestation witnesses carry their own independent chain and do not
+        // move the runtime head (same rule as `rvf verify-witness`); skip them.
+        for offset in candidates.into_iter().rev().take(64) {
+            let mut reader = BufReader::new(&self.file);
+            let Ok((_, payload)) = self.read_seg(&mut reader, offset) else {
+                return;
+            };
+            if rvf_crypto::is_valid_attestation_witness(&payload) {
+                continue;
+            }
+            if rvf_crypto::classify_witness_payload(&payload)
+                == rvf_crypto::WitnessPayloadKind::Chain
+                && payload.len() >= rvf_crypto::WITNESS_ENTRY_SIZE
+            {
+                let last = &payload[payload.len() - rvf_crypto::WITNESS_ENTRY_SIZE..];
+                self.last_witness_hash = rvf_crypto::chain_entry_hash(last);
+            }
             return;
-        };
-        let mut reader = BufReader::new(&self.file);
-        let Ok((_, payload)) = self.read_seg(&mut reader, offset) else {
-            return;
-        };
-        if rvf_crypto::classify_witness_payload(&payload) == rvf_crypto::WitnessPayloadKind::Chain
-            && payload.len() >= rvf_crypto::WITNESS_ENTRY_SIZE
-        {
-            let last = &payload[payload.len() - rvf_crypto::WITNESS_ENTRY_SIZE..];
-            self.last_witness_hash = rvf_crypto::chain_entry_hash(last);
         }
     }
 

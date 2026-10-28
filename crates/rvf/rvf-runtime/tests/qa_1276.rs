@@ -197,3 +197,62 @@ fn fully_rejected_ingest_does_not_advance_epoch() {
     let s = RvfStore::open_readonly(&path).unwrap();
     assert_eq!(s.epoch(), before, "persisted epoch");
 }
+
+#[test]
+fn non_finite_vectors_are_rejected_at_ingest() {
+    let d = tempfile::tempdir().unwrap();
+    let path = build(d.path(), 1, 5);
+    let mut s = RvfStore::open(&path).unwrap();
+    let before = s.epoch();
+    let nan = [f32::NAN, 0.0, 0.0, 0.0];
+    let inf = [0.0, f32::INFINITY, 0.0, 0.0];
+    let r = s
+        .ingest_batch(&[&nan[..], &inf[..]], &[100, 101], None)
+        .unwrap();
+    assert_eq!((r.accepted, r.rejected), (0, 2));
+    assert_eq!(s.epoch(), before, "all rejected => epoch unchanged");
+    // Mixed batch: only the finite row lands.
+    let ok = [1.0f32, 2.0, 3.0, 4.0];
+    let r = s
+        .ingest_batch(&[&nan[..], &ok[..]], &[102, 103], None)
+        .unwrap();
+    assert_eq!((r.accepted, r.rejected), (1, 1));
+    assert_eq!(s.epoch(), before + 1);
+}
+
+#[test]
+fn overflowing_distances_are_an_error_not_an_arbitrary_order() {
+    let d = tempfile::tempdir().unwrap();
+    let path = build(d.path(), 1, 5);
+    let s = RvfStore::open_readonly(&path).unwrap();
+    let q = [f32::MAX; 4]; // finite, but squared distances overflow to inf
+    let e = s.query(&q, 3, &QueryOptions::default()).unwrap_err();
+    assert_eq!(code(e), ErrorCode::NonFiniteQuery);
+}
+
+/// A writable open removes a torn tail so later appends stay readable.
+#[test]
+fn writable_open_repairs_torn_tail_before_appending() {
+    let d = tempfile::tempdir().unwrap();
+    let path = build(d.path(), 2, 10);
+    let full = std::fs::read(&path).unwrap();
+    // Torn witness append: valid header claiming 73 bytes, 10 present.
+    let mut seg = vec![0u8; 64];
+    seg[..4].copy_from_slice(&0x5256_4653u32.to_le_bytes());
+    seg[4] = 1;
+    seg[5] = 0x0A;
+    seg[0x10..0x18].copy_from_slice(&73u64.to_le_bytes());
+    let mut torn = full.clone();
+    torn.extend_from_slice(&seg);
+    torn.extend_from_slice(&[7u8; 10]);
+    std::fs::write(&path, &torn).unwrap();
+    assert!(RvfStore::open_readonly_strict(&path).is_err());
+
+    let mut s = RvfStore::open(&path).unwrap();
+    assert!(s.tail_recovery().repaired);
+    s.ingest_batch(&[&[9.0f32, 9.0, 9.0, 9.0][..]], &[999], None)
+        .unwrap();
+    s.close().unwrap();
+    let s = RvfStore::open_readonly_strict(&path).expect("clean after repair");
+    assert_eq!(s.status().total_vectors, 21);
+}
