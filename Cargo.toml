@@ -54,6 +54,7 @@ members = [
     # ruvector Python SDK (ADR-352): PyO3 + maturin bindings. Salvaged from
     # the stale feature/python-sdk-m1 branch (M1 RaBitQ scope) and extended.
     "crates/ruvector-py",
+    "crates/ruvector-streamvbyte-hnsw",
     # ruvector edge pure-Rust cores (ADR-351): resource-server auth, tenancy,
     # and the edge OAuth authorization server. wasm32-unknown-unknown clean.
     "crates/ruvector-edge-auth",

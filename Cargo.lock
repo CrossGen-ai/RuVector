@@ -11313,6 +11313,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-streamvbyte-hnsw"
+version = "0.1.0"
+dependencies = [
+ "criterion 0.5.1",
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
 name = "ruvector-temporal-coherence"
 version = "0.1.0"
 dependencies = [
