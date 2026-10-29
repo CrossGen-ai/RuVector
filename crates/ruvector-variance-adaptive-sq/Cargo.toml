@@ -1,0 +1,27 @@
+[package]
+name = "ruvector-variance-adaptive-sq"
+version = "0.1.0"
+edition = "2021"
+description = "Variance-Adaptive Scalar Quantization (VA-SQ): per-dimension bit allocation under a global bit budget for ANN"
+license = "MIT"
+
+# Standalone workspace: isolated from the ruvector monorepo so it builds without
+# dragging the full workspace. The research branch intentionally uses this.
+[workspace]
+
+[lib]
+name = "vasq"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vasq-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
