@@ -1,0 +1,27 @@
+[package]
+name = "ruvector-asymmetric-rabitq-q2d1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Asymmetric RaBitQ: 2-bit ternary query codes vs 1-bit database codes with shared Hadamard rotation for recall-biased binary ANN"
+
+[[bin]]
+name = "arabitq-demo"
+path = "src/main.rs"
+
+[[bench]]
+name = "arabitq_bench"
+harness = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rand = { version = "0.8", features = ["small_rng"] }
+rand_distr = "0.4"
+
+[dev-dependencies]
+criterion = { workspace = true }
