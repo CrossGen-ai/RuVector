@@ -51,6 +51,7 @@ exclude = ["patches/candle-core-0.8.4", "patches/candle-core-0.9.2", "external/r
     # unify with this workspace. The pure cores it wraps are members below.
     "edge", "edge/*"]
 members = [
+    "crates/ruvector-rcm-hnsw",
     # ruvector Python SDK (ADR-352): PyO3 + maturin bindings. Salvaged from
     # the stale feature/python-sdk-m1 branch (M1 RaBitQ scope) and extended.
     "crates/ruvector-py",
