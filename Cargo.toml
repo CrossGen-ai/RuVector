@@ -366,6 +366,8 @@ members = [
     "crates/ruvector-query-cache",
     # Reservoir-sampled adaptive product quantization under drift (ADR-302)
     "crates/ruvector-streaming-qng",
+    # Permutation-prefix reranker: ultra-compact top-m pivot ordering (ADR-357)
+    "crates/ruvector-permutation-prefix",
     # Entropy-adaptive ANN beam search: live Shannon entropy gates beam width (ADR-303)
     "crates/ruvector-entropy-ann",
     # PIR #859 workspace-membership sweep: these crates were dangling —
