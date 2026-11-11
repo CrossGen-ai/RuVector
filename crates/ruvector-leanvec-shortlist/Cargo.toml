@@ -1,0 +1,19 @@
+[workspace]
+
+[package]
+name = "ruvector-leanvec-shortlist"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "LeanVec-style low-rank pre-projection shortlist for ANN (ruvector nightly 2026-11-11)"
+
+[dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
