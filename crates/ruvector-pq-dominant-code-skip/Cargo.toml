@@ -1,0 +1,19 @@
+[workspace]
+
+[package]
+name = "ruvector-pq-dominant-code-skip"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "PQ ADC scan with dominant-code skip bitmap for reduced memory bandwidth (ruvector nightly 2026-11-12)"
+
+[dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
