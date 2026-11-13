@@ -1,0 +1,21 @@
+[package]
+name = "ruvector-ivf-progressive-shortlist"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Progressive breadth-first shortlist for IVF-PQ: scan top-m from each posting first, revisit lists whose residual-norm cap can still improve top-k."
+
+[[bin]]
+name = "ipsl-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[workspace]
