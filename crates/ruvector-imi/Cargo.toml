@@ -1,0 +1,28 @@
+[package]
+name = "ruvector-imi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Inverted Multi-Index (IMI) coarse quantizer for ultra-large vector search"
+repository = "https://github.com/CrossGen-ai/RuVector"
+
+[lib]
+name = "ruvector_imi"
+path = "src/lib.rs"
+
+[[bin]]
+name = "imi-bench"
+path = "src/bin/bench.rs"
+
+[[bin]]
+name = "imi-bench-large"
+path = "src/bin/bench_large.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[workspace]
