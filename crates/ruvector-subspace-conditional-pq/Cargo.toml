@@ -1,0 +1,16 @@
+[package]
+name = "ruvector-subspace-conditional-pq"
+version = "0.1.0"
+edition = "2021"
+description = "Subspace-Conditional Product Quantization: per-pair codebooks that exploit inter-subspace correlation while preserving LUT-based ADC scan cost."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[[bench]]
+name = "scpq_bench"
+harness = false
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"

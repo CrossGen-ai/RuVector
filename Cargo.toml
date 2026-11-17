@@ -51,6 +51,7 @@ exclude = ["crates/prime-radiant", "patches/candle-core-0.8.4", "patches/candle-
     # unify with this workspace. The pure cores it wraps are members below.
     "edge", "edge/*"]
 members = [
+    "crates/ruvector-subspace-conditional-pq",
     # Shared EMA clustering core and portable npm WASM engine (ADR-359).
     "crates/ruvector-e-means",
     # ruvector Python SDK (ADR-352): PyO3 + maturin bindings. Salvaged from
