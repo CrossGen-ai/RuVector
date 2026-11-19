@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-radix-bucket-topk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Heap-less top-K via exponentially-spaced radix buckets for ANN beam search (ADR-362)."
+
+[dependencies]
+
+[dev-dependencies]
+
+[[bench]]
+name = "radix_bucket_bench"
+harness = false
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
