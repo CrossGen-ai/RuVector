@@ -1,0 +1,19 @@
+[package]
+name = "ruvector-itq-binary"
+version = "0.1.0"
+edition = "2021"
+description = "Iterative Quantization (ITQ) rotation for binary embedding codes — Gong & Lazebnik 2011, Procrustes-optimized sign hashing."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[[bin]]
+name = "itq-bench"
+path = "src/bin/bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[workspace]
