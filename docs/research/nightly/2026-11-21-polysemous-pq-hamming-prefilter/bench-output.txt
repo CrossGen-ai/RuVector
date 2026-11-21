@@ -1,0 +1,35 @@
+   Compiling ruvector-polysemous-pq-hamming-prefilter v0.1.0 (/Users/crossgenai/ruv/nightly/ruvector/crates/ruvector-polysemous-pq-hamming-prefilter)
+    Finished `release` profile [optimized] target(s) in 1.65s
+     Running `target/release/polysemous-bench`
+=== ruvector-polysemous-pq-hamming-prefilter benchmark ===
+n=50000, dim=64, m=8, ksub=256, queries=200, top_k=10, km_iters=20, sa_iters=80000
+
+Generating MoG data... done (0.07s)
+Training PQ... done (3.55s)
+Fitting polysemous SA (80000 iters × 8 subspaces)... done (30.51s)
+Encoding codes... done (0.16s)
+  raw vectors: 12.21 MiB, PQ codes: 0.38 MiB  (compression 32.0x)
+
+Building exact ground truth for 200 queries... done (0.13s)
+
+--- Polysemous prefilter sweep (ADC rerank on survivors) ---
+thresh      recall@10      survivors         lat ms speedup vs ADC
+16              0.002              1          0.072           5.95x
+20              0.019             94          0.076           5.64x
+24              0.074           1506          0.103           4.15x
+28              0.131           9564          0.210           2.03x
+32              0.158          27519          0.463           0.92x
+36              0.161          43520          0.528           0.81x
+40              0.161          49175          0.480           0.89x
+48              0.159          49999          0.506           0.84x
+64              0.159          50000          0.471           0.91x
+
+--- Reference variants ---
+exact L2 scan   : lat 0.644 ms/query
+ADC (plain PQ)  : lat 0.428 ms/query, recall@10 0.159
+
+Summary:
+  train_time     = 3.55s
+  sa_time        = 30.51s
+  encode_time    = 0.16s
+  code size      = 0.38 MiB

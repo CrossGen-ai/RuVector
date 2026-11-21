@@ -1,0 +1,34 @@
+[package]
+name = "ruvector-polysemous-pq-hamming-prefilter"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+authors = ["RuVector Nightly Research"]
+description = "Polysemous Product Quantization: Hamming prefilter + ADC rerank for compressed ANN (Douze/Jégou/Schmid 2016)"
+readme = "README.md"
+repository = "https://github.com/CrossGen-ai/RuVector"
+keywords = ["vector-search", "ann", "product-quantization", "polysemous", "hamming"]
+categories = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "polysemous-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+thiserror = "1"
+
+[dev-dependencies]
+approx = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+# Keep this crate out of the enclosing workspace; nightly research crates
+# publish from standalone branches without touching the workspace root.
+[workspace]
+
