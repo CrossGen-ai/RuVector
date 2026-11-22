@@ -1,0 +1,30 @@
+[package]
+name = "ruvector-gcsq"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "MIT"
+description = "Gray Code Scalar Quantization: Hamming-correlated scalar quantization for cache-friendly ANN reranking"
+repository = "https://github.com/ruvnet/ruvector"
+keywords = ["ann", "quantization", "gray-code", "hamming", "vector-search"]
+categories = ["algorithms", "science"]
+include = ["src/**", "tests/**", "examples/**", "benches/**", "Cargo.toml", "README.md"]
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[[bench]]
+name = "gcsq_bench"
+path = "benches/gcsq_bench.rs"
+harness = false
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
