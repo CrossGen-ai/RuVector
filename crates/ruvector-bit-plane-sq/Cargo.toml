@@ -1,0 +1,18 @@
+[package]
+name = "ruvector-bit-plane-sq"
+version = "0.1.0"
+edition = "2021"
+description = "Bit-plane progressive decoding for SQ8 scalar quantization: top-M MSB-plane shortlist then full-precision refine."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[dev-dependencies]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
