@@ -1,0 +1,30 @@
+# ruvector-cpolytope-lsh-ivf — standalone crate.
+# Declares an empty [workspace] so the massive root workspace at
+# /Users/crossgenai/ruv/nightly/ruvector/Cargo.toml does not try to pull
+# this crate in and its unrelated dependencies.
+[workspace]
+
+[package]
+name = "ruvector-cpolytope-lsh-ivf"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-polytope LSH hash-collision ranker for IVF probe ordering on unit-sphere / cosine queries."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/CrossGen-ai/RuVector"
+
+[dependencies]
+rand = "0.8"
+rand_chacha = "0.3"
+
+[lib]
+name = "ruvector_cpolytope_lsh_ivf"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
