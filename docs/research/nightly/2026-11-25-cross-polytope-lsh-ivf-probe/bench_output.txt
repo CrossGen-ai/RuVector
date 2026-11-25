@@ -1,0 +1,17 @@
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running `target/release/bench`
+ruvector-cpolytope-lsh-ivf bench
+  N=50000  dim=128  K=1024  Q=1000  top_k=10  L_hashes=16
+  seeds: data=0xa1 centroids=0xc0ffee queries=0xb2 hashes=0xd3
+  dataset + IVF partition built in 1.57s
+  truth top-10 computed in 2.26s
+
+  cross-polytope ranker memory overhead: 64 bytes / centroid (L=16, pad_dim=128)
+
+| ranker         | avg rank µs | recall@1 | recall@4 | recall@16 | recall@64 |
+|----------------|------------:|---------:|---------:|----------:|----------:|
+| L2             |       44.69 |   0.0326 |   0.0641 |    0.1364 |    0.3067 |
+| Cosine         |       41.70 |   0.0326 |   0.0641 |    0.1364 |    0.3067 |
+| CrossPolytope  |       53.61 |   0.0073 |   0.0263 |    0.0739 |    0.1653 |
+
+done.
